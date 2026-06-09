@@ -36,7 +36,7 @@ def test_execute_swarm():
     # The Golden Path Demo Prompt
     payload = {
         "user_prompt": "I have a strategy meeting with Contoso next week. Research their latest AI product launches and generate a prep briefing.",
-        "use_mock_scheduler": True  # Using mock so it doesn't hang on Graph API
+        "use_mock_scheduler": False  # Use real scheduler by default
     }
     
     print("Sending prompt to API... (This will take 15-30 seconds)")
@@ -59,7 +59,7 @@ def test_execute_swarm_stream():
     
     payload = {
         "user_prompt": "I have a strategy meeting with Contoso next week.",
-        "use_mock_scheduler": True
+        "use_mock_scheduler": False
     }
     
     print("Sending prompt to Streaming API...")

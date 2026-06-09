@@ -23,7 +23,7 @@ export interface SwarmResult {
 export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
   const response = await api.post('/execute', {
     user_prompt: prompt,
-    use_mock_scheduler: true // Keep true until your teammate fixes Graph API
+    use_mock_scheduler: false
   });
   return response.data;
 };

@@ -52,7 +52,7 @@ else:
 
 class SwarmRequest(BaseModel):
     user_prompt: str
-    use_mock_scheduler: bool = True  # Keep True until your teammate fixes Graph API
+    use_mock_scheduler: bool = False  # Use real scheduler by default
 
 class ExecutionLogItem(BaseModel):
     agent: str

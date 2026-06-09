@@ -13,9 +13,8 @@ async def test_full_swarm():
     print("🚀 TESTING FULL AGENT SWARM (End-to-End)")
     print("="*60)
     
-    # Initialize with MOCK scheduler so we can test without Graph API login!
-    # When your teammate fixes the Graph API, change this to: OrchestratorAgent(use_mock_scheduler=False)
-    swarm = OrchestratorAgent(use_mock_scheduler=True)
+    # Initialize with real scheduler; Graph API is now enabled.
+    swarm = OrchestratorAgent(use_mock_scheduler=False)
     
     # The Golden Path Demo Scenario
     user_prompt = "I have a strategy meeting with Contoso next week. Research their latest AI product launches, check my calendar for conflicts, and generate a prep briefing."
