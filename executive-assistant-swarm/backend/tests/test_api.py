@@ -53,6 +53,25 @@ def test_execute_swarm():
         print(f"   Error: {response.json().get('detail')}")
         assert False, "API execution failed"
 
+def test_execute_swarm_stream():
+    """Test the streaming execution endpoint."""
+    print("\n--- Testing Swarm Streaming Endpoint ---")
+    
+    payload = {
+        "user_prompt": "I have a strategy meeting with Contoso next week.",
+        "use_mock_scheduler": True
+    }
+    
+    print("Sending prompt to Streaming API...")
+    with client.stream("POST", "/execute/stream", json=payload) as response:
+        assert response.status_code == 200
+        event_count = 0
+        for line in response.iter_lines():
+            if line.startswith("data: "):
+                event_count += 1
+                
+        print(f"✅ Streaming API Execution Successful! Received {event_count} events.")
+
 if __name__ == "__main__":
     print("="*50)
     print("RUNNING API TESTS")
@@ -61,6 +80,7 @@ if __name__ == "__main__":
     test_root_endpoint()
     test_health_check()
     test_execute_swarm()
+    test_execute_swarm_stream()
     
     print("\n" + "="*50)
     print("🎉 ALL API TESTS PASSED!")

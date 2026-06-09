@@ -2,33 +2,46 @@ import asyncio
 from typing import Dict, Any
 from .base_agent import BaseAgent
 from azure.identity import DeviceCodeCredential
+from azure.core.credentials import AccessToken
 from msgraph import GraphServiceClient
 from msgraph.generated.users.item.events.events_request_builder import EventsRequestBuilder
 from utils.config import settings
 
+class StaticTokenCredential:
+    def __init__(self, token: str):
+        self.token = token
+    def get_token(self, *scopes, **kwargs) -> AccessToken:
+        import time
+        return AccessToken(self.token, int(time.time()) + 3600)
+
 class SchedulerAgent(BaseAgent):
     """Agent responsible for Calendar and Email via Microsoft Graph."""
     
-    def __init__(self):
+    def __init__(self, access_token: str = None):
         super().__init__(name="SchedulerAgent", role="Calendar & Email Coordinator")
+        self.access_token = access_token
         self.graph_client = self._init_graph_client()
 
     def _init_graph_client(self):
-        """Initialize Microsoft Graph Client using Device Code Flow for easy local testing."""
+        """Initialize Microsoft Graph Client using provided access token or fallback to Device Code Flow."""
         self.log_action("Initializing Microsoft Graph Client...")
         
-        if "your-" in settings.TENANT_ID or "your-" in settings.CLIENT_ID:
-            self.log_action("Dummy MS Graph credentials detected. Operating in mock mode.", level="WARNING")
+        if not self.access_token and ("your-" in settings.TENANT_ID or "your-" in settings.CLIENT_ID):
+            self.log_action("Dummy MS Graph credentials detected and no token provided. Operating in mock mode.", level="WARNING")
             self.mock_mode = True
             return None
 
         self.mock_mode = False
         
-        # DeviceCodeCredential is perfect for local hackathon testing!
-        credential = DeviceCodeCredential(
-            client_id=settings.CLIENT_ID,
-            tenant_id=settings.TENANT_ID
-        )
+        if self.access_token:
+            self.log_action("Using provided Entra ID Access Token from frontend.")
+            credential = StaticTokenCredential(self.access_token)
+        else:
+            self.log_action("Using Device Code Flow for local backend testing.")
+            credential = DeviceCodeCredential(
+                client_id=settings.CLIENT_ID,
+                tenant_id=settings.TENANT_ID
+            )
         
         # Scopes needed for Calendar and Mail
         scopes = ['Calendars.Read', 'Calendars.ReadWrite', 'Mail.Send', 'User.Read']

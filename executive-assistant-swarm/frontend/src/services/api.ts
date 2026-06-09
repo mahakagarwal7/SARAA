@@ -27,3 +27,57 @@ export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
   });
   return response.data;
 };
+
+export const executeSwarmStream = async (
+  prompt: string,
+  token: string | undefined,
+  onEvent: (event: any) => void
+): Promise<void> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/execute/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      user_prompt: prompt,
+      use_mock_scheduler: !token // Force mock mode if no token is provided
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Stream failed: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) return;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const dataStr = line.replace('data: ', '').trim();
+        if (dataStr) {
+          try {
+            const parsedData = JSON.parse(dataStr);
+            onEvent(parsedData);
+          } catch (e) {
+            console.error("Failed to parse SSE JSON:", dataStr, e);
+          }
+        }
+      }
+    }
+  }
+};

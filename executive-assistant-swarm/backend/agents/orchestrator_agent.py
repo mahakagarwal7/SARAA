@@ -1,4 +1,5 @@
 import json
+import asyncio
 from typing import Dict, Any, List
 from .base_agent import BaseAgent
 from .research_agent import ResearchAgent
@@ -25,8 +26,10 @@ class MockSchedulerAgent(BaseAgent):
 class OrchestratorAgent(BaseAgent):
     """The central brain that coordinates the agent swarm."""
     
-    def __init__(self, use_mock_scheduler: bool = False):
+    def __init__(self, use_mock_scheduler: bool = False, access_token: str = None):
         super().__init__(name="Orchestrator", role="Swarm Coordinator")
+        self.use_mock_scheduler = use_mock_scheduler
+        self.access_token = access_token
         self.research_agent = ResearchAgent()
         self.briefing_agent = BriefingAgent()
         
@@ -36,13 +39,18 @@ class OrchestratorAgent(BaseAgent):
             self.log_action("⚠️ Orchestrator initialized with MOCK Scheduler")
         else:
             from .scheduler_agent import SchedulerAgent
-            self.scheduler_agent = SchedulerAgent()
+            self.scheduler_agent = SchedulerAgent(access_token=access_token)
             self.log_action("✅ Orchestrator initialized with REAL Graph Scheduler")
 
     async def execute(self, user_request: str) -> Dict[str, Any]:
         """Main entry point for the swarm."""
         self.log_action(f"Received user request: '{user_request}'")
         
+        if not self.use_mock_scheduler:
+            self.log_action("Running True AutoGen Swarm (Production Mode)...")
+            return await self._run_autogen_swarm(user_request)
+            
+        self.log_action("Running Sequential Swarm (Mock Mode)...")
         # 1. Decompose the request into a plan
         plan = await self._decompose_request(user_request)
         self.log_action(f"Execution Plan: {json.dumps(plan, indent=2)}")
@@ -85,6 +93,155 @@ class OrchestratorAgent(BaseAgent):
             "status": "success",
             "execution_log": execution_log,
             "results": results,
+            "final_summary": final_summary
+        }
+
+    async def execute_stream(self, user_request: str):
+        """Async generator that yields SSE JSON strings."""
+        yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Received user request..."})
+        await asyncio.sleep(0.5)
+
+        if not self.use_mock_scheduler:
+            yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Initializing AutoGen Swarm..."})
+            await asyncio.sleep(0.5)
+            # For this MVP step, we just run the swarm and yield the result
+            result = await self._run_autogen_swarm(user_request)
+            yield json.dumps({"type": "result", "data": result})
+            return
+
+        yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Decomposing task into sub-agent plan..."})
+        plan = await self._decompose_request(user_request)
+        await asyncio.sleep(1)
+
+        results = {}
+        execution_log = []
+
+        if plan.get("needs_research", False):
+            yield json.dumps({"type": "log", "agent": "ResearchAgent", "status": "Searching the web for latest information..."})
+            await asyncio.sleep(1.5)
+            research_task = {"query": plan.get("research_query", user_request), "num_results": 3}
+            results["research"] = await self.research_agent.execute(research_task)
+            execution_log.append({"agent": "ResearchAgent", "status": "success"})
+            yield json.dumps({"type": "log", "agent": "ResearchAgent", "status": "Research complete."})
+
+        if plan.get("needs_calendar", False):
+            yield json.dumps({"type": "log", "agent": "SchedulerAgent", "status": "Connecting to Microsoft Graph to check calendar..."})
+            await asyncio.sleep(1.5)
+            calendar_task = {"action": "check_calendar"}
+            results["calendar"] = await self.scheduler_agent.execute(calendar_task)
+            execution_log.append({"agent": "SchedulerAgent", "status": "success"})
+            yield json.dumps({"type": "log", "agent": "SchedulerAgent", "status": "Calendar check complete."})
+
+        if plan.get("needs_briefing", False) and results.get("research") and results.get("calendar"):
+            yield json.dumps({"type": "log", "agent": "BriefingAgent", "status": "Synthesizing research and calendar into executive briefing..."})
+            await asyncio.sleep(2)
+            briefing_task = {
+                "meeting_subject": plan.get("meeting_subject", "Executive Meeting"),
+                "research_synthesis": results["research"].get("synthesis", ""),
+                "calendar_context": str(results["calendar"].get("data", []))
+            }
+            results["briefing"] = await self.briefing_agent.execute(briefing_task)
+            execution_log.append({"agent": "BriefingAgent", "status": "success"})
+            yield json.dumps({"type": "log", "agent": "BriefingAgent", "status": "Briefing document generated."})
+
+        yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Compiling final summary..."})
+        final_summary = await self._compile_summary(user_request, results)
+        await asyncio.sleep(1)
+
+        final_result = {
+            "status": "success",
+            "execution_log": execution_log,
+            "results": results,
+            "final_summary": final_summary
+        }
+        yield json.dumps({"type": "result", "data": final_result})
+
+    async def _run_autogen_swarm(self, user_request: str) -> Dict[str, Any]:
+        """Run the AutoGen GroupChat for dynamic orchestration."""
+        import autogen
+        from utils.config import settings
+        from tools.autogen_tools import perform_research, check_calendar, generate_briefing
+        
+        # Configure LLM for AutoGen
+        llm_config = {
+            "config_list": [{
+                "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
+                "api_key": settings.AZURE_OPENAI_API_KEY,
+                "base_url": settings.AZURE_OPENAI_ENDPOINT,
+                "api_type": "azure",
+                "api_version": "2024-05-01-preview"
+            }],
+            "temperature": 0.2
+        }
+
+        # Initialize Agents
+        user_proxy = autogen.UserProxyAgent(
+            name="Executive",
+            system_message="An executive requesting assistance. Execute functions when suggested.",
+            human_input_mode="NEVER",
+            max_consecutive_auto_reply=10
+        )
+        
+        researcher = autogen.AssistantAgent(
+            name="Researcher",
+            system_message="You are a research agent. Use the perform_research tool to find information.",
+            llm_config=llm_config
+        )
+        
+        scheduler = autogen.AssistantAgent(
+            name="Scheduler",
+            system_message="You are a scheduling agent. Use the check_calendar tool to find calendar conflicts.",
+            llm_config=llm_config
+        )
+        
+        briefer = autogen.AssistantAgent(
+            name="Briefer",
+            system_message="You are a briefing agent. Use the generate_briefing tool to create a final report once research and scheduling are done. Then output TERMINATE.",
+            llm_config=llm_config
+        )
+        
+        # Register tools
+        autogen.agentchat.register_function(
+            perform_research,
+            caller=researcher,
+            executor=user_proxy,
+            description="Perform web research on a specific query."
+        )
+        
+        autogen.agentchat.register_function(
+            check_calendar,
+            caller=scheduler,
+            executor=user_proxy,
+            description="Check the executive's calendar."
+        )
+        
+        autogen.agentchat.register_function(
+            generate_briefing,
+            caller=briefer,
+            executor=user_proxy,
+            description="Generate a briefing document based on research and calendar."
+        )
+        
+        # Create GroupChat
+        groupchat = autogen.GroupChat(
+            agents=[user_proxy, researcher, scheduler, briefer],
+            messages=[],
+            max_round=12
+        )
+        manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
+        
+        # Initiate Chat (AutoGen a_initiate_chat supports async)
+        chat_res = await user_proxy.a_initiate_chat(
+            manager,
+            message=user_request
+        )
+        
+        final_summary = chat_res.summary if hasattr(chat_res, "summary") and chat_res.summary else "AutoGen Swarm completed the request."
+        
+        return {
+            "status": "success",
+            "execution_log": [{"agent": "AutoGenManager", "status": "success"}],
+            "results": {"chat_history": chat_res.chat_history},
             "final_summary": final_summary
         }
 

@@ -18,7 +18,9 @@ import {
   CheckmarkCircle24Regular,
   Play24Regular 
 } from '@fluentui/react-icons';
-import { executeSwarm, type SwarmResult } from './services/api';
+import { useMsal, useIsAuthenticated } from "@azure/msal-react";
+import { loginRequest } from "./authConfig";
+import { executeSwarmStream, type SwarmResult } from './services/api';
 import './App.css';
 
 function App() {
@@ -26,6 +28,10 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SwarmResult | null>(null);
   const [error, setError] = useState('');
+  const [liveLogs, setLiveLogs] = useState<{agent: string, status: string}[]>([]);
+
+  const { instance, accounts } = useMsal();
+  const isAuthenticated = useIsAuthenticated();
 
   const handleExecute = async () => {
     if (!prompt.trim()) return;
@@ -33,13 +39,35 @@ function App() {
     setIsLoading(true);
     setResult(null);
     setError('');
+    setLiveLogs([]);
+
+    let token = undefined;
+    if (isAuthenticated && accounts.length > 0) {
+      try {
+        const tokenResponse = await instance.acquireTokenSilent({
+          ...loginRequest,
+          account: accounts[0]
+        });
+        token = tokenResponse.accessToken;
+      } catch (e) {
+        console.warn("Silent token acquisition failed. Using mock mode.", e);
+      }
+    }
 
     try {
-      const response = await executeSwarm(prompt);
-      setResult(response);
+      await executeSwarmStream(prompt, token, (event) => {
+        if (event.type === 'log') {
+          setLiveLogs((prev) => [...prev, { agent: event.agent, status: event.status || event.message }]);
+        } else if (event.type === 'result') {
+          setResult(event.data);
+          setIsLoading(false);
+        } else if (event.type === 'error') {
+          setError(event.message);
+          setIsLoading(false);
+        }
+      });
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to connect to the Agent Swarm. Is the backend running?');
-    } finally {
+      setError(err.message || 'Failed to connect to the Agent Swarm. Is the backend running?');
       setIsLoading(false);
     }
   };
@@ -53,9 +81,16 @@ function App() {
             <Bot24Regular className="logo-icon" />
             <Title1 as="h1">Executive Assistant Agent Swarm</Title1>
           </div>
-          <Text size={300} className="subtitle">
-            Autonomous AI agents orchestrating research, scheduling, and briefing generation.
-          </Text>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <Text size={300} className="subtitle" style={{ margin: 0 }}>
+              Autonomous AI agents orchestrating research, scheduling, and briefing generation.
+            </Text>
+            {isAuthenticated ? (
+              <Button appearance="secondary" onClick={() => instance.logoutPopup()}>Sign Out ({accounts[0]?.name})</Button>
+            ) : (
+              <Button appearance="primary" onClick={() => instance.loginPopup(loginRequest).catch(e => console.error(e))}>Sign In with Microsoft</Button>
+            )}
+          </div>
         </header>
 
         {/* Input Section */}
@@ -88,18 +123,21 @@ function App() {
         </Card>
 
         {/* Loading / Agent Status Section */}
-        {isLoading && (
+        {isLoading && !result && (
           <Card className="status-card">
             <CardHeader 
               header={<Text weight="semibold">🔄 Agent Swarm Active</Text>} 
             />
-            <div className="agent-steps">
-              <div className="step active"><Badge appearance="filled" color="brand">1</Badge> Orchestrator decomposing task...</div>
-              <div className="step active"><Badge appearance="filled" color="brand">2</Badge> Research Agent browsing web...</div>
-              <div className="step active"><Badge appearance="filled" color="brand">3</Badge> Scheduler Agent checking Graph API...</div>
-              <div className="step active"><Badge appearance="filled" color="brand">4</Badge> Briefing Agent generating document...</div>
+            <div className="agent-steps" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+              {liveLogs.map((log, index) => (
+                <div key={index} className="step active" style={{ display: 'flex', alignItems: 'center' }}>
+                  <Badge appearance="filled" color="brand">{index + 1}</Badge>
+                  <Text weight="semibold" style={{ marginLeft: 8, marginRight: 8 }}>{log.agent}:</Text> 
+                  <Text>{log.status}</Text>
+                </div>
+              ))}
             </div>
-            <div className="spinner-container">
+            <div className="spinner-container" style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
               <Spinner size="large" label="Agents are collaborating..." />
             </div>
           </Card>

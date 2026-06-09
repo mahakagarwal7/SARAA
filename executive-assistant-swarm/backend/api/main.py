@@ -1,7 +1,9 @@
 import sys
 import os
 import asyncio
-from fastapi import FastAPI, HTTPException
+import json
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -61,17 +63,27 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.post("/execute", response_model=SwarmResponse)
-async def execute_swarm(request: SwarmRequest):
+async def execute_swarm(
+    request: SwarmRequest,
+    authorization: Optional[str] = Header(None)
+):
     """
     Main endpoint: Takes a user prompt and runs the agent swarm.
     """
     if not request.user_prompt.strip():
         raise HTTPException(status_code=400, detail="user_prompt cannot be empty")
 
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
     try:
         # Initialize the orchestrator
         # Note: In a production app, you'd pool this. For a hackathon, instantiating per request is fine.
-        orchestrator = OrchestratorAgent(use_mock_scheduler=request.use_mock_scheduler)
+        orchestrator = OrchestratorAgent(
+            use_mock_scheduler=request.use_mock_scheduler,
+            access_token=token
+        )
         
         # Execute the swarm (this is async and might take 10-30 seconds)
         result = await orchestrator.execute(request.user_prompt)
@@ -86,6 +98,36 @@ async def execute_swarm(request: SwarmRequest):
     except Exception as e:
         # Catch any errors from the agents/LLM and return a clean 500 error
         raise HTTPException(status_code=500, detail=f"Swarm execution failed: {str(e)}")
+
+@app.post("/execute/stream")
+async def execute_swarm_stream(
+    request: SwarmRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Streaming endpoint: Yields Server-Sent Events (SSE) for real-time logs.
+    """
+    if not request.user_prompt.strip():
+        raise HTTPException(status_code=400, detail="user_prompt cannot be empty")
+
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+
+    async def event_generator():
+        orchestrator = OrchestratorAgent(
+            use_mock_scheduler=request.use_mock_scheduler,
+            access_token=token
+        )
+        try:
+            async for chunk in orchestrator.execute_stream(request.user_prompt):
+                # Yield in SSE format: data: {...}\n\n
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            error_msg = json.dumps({"type": "error", "message": str(e)})
+            yield f"data: {error_msg}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # --- Run Server Locally ---
 if __name__ == "__main__":
