@@ -4,8 +4,10 @@ import asyncio
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import pytest
 from agents.orchestrator_agent import OrchestratorAgent
 
+@pytest.mark.asyncio
 async def test_full_swarm():
     print("\n" + "="*60)
     print("🚀 TESTING FULL AGENT SWARM (End-to-End)")

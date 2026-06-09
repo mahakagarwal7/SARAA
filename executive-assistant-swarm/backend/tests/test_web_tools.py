@@ -3,9 +3,11 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import asyncio
+import pytest
 from tools.web_search import BingSearchTool
 from tools.web_scraper import WebScraperTool
 
+@pytest.mark.asyncio
 async def test_bing_search():
     """Test Bing search functionality"""
     print("\n=== Testing Bing Search ===")
@@ -24,6 +26,7 @@ async def test_bing_search():
     assert len(results) > 0, "Search should return at least one result"
     print("✓ Bing search test passed")
 
+@pytest.mark.asyncio
 async def test_web_scraper():
     """Test web scraper functionality"""
     print("\n=== Testing Web Scraper ===")
@@ -40,6 +43,7 @@ async def test_web_scraper():
     assert len(content) > 0, "Scraper should return content"
     print("✓ Web scraper test passed")
 
+@pytest.mark.asyncio
 async def test_combined_workflow():
     """Test search + scrape workflow"""
     print("\n=== Testing Combined Workflow ===")

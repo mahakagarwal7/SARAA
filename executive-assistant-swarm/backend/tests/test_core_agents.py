@@ -5,9 +5,11 @@ import asyncio
 # Add backend to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import pytest
 from agents.research_agent import ResearchAgent
 from agents.scheduler_agent import SchedulerAgent
 
+@pytest.mark.asyncio
 async def test_research_agent():
     """Test the Research Agent"""
     print("\n--- Testing Research Agent ---")
@@ -27,6 +29,7 @@ async def test_research_agent():
     assert result['status'] == 'success', "Research agent failed!"
     print("✅ Research Agent Test Passed!\n")
 
+@pytest.mark.asyncio
 async def test_scheduler_agent():
     """Test the Scheduler Agent (Microsoft Graph)"""
     print("--- Testing Scheduler Agent ---")

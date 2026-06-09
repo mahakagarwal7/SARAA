@@ -4,8 +4,10 @@ import asyncio
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import pytest
 from agents.briefing_agent import BriefingAgent
 
+@pytest.mark.asyncio
 async def test_briefing_agent():
     print("\n--- Testing Briefing Agent ---")
     agent = BriefingAgent()

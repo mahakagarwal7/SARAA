@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 from .base_agent import BaseAgent
 from .research_agent import ResearchAgent
 from .briefing_agent import BriefingAgent
+from utils.memory_db import MemoryDB
 
 # We will import the real one later, but use a mock for now if needed
 # from .scheduler_agent import SchedulerAgent 
@@ -32,6 +33,7 @@ class OrchestratorAgent(BaseAgent):
         self.access_token = access_token
         self.research_agent = ResearchAgent()
         self.briefing_agent = BriefingAgent()
+        self.memory = MemoryDB()
         
         # Use Mock if Graph API isn't ready, otherwise use Real
         if use_mock_scheduler:
@@ -247,8 +249,16 @@ class OrchestratorAgent(BaseAgent):
 
     async def _decompose_request(self, user_request: str) -> Dict[str, Any]:
         """Use LLM to break down the user prompt into a structured JSON plan."""
+        # Fetch user preferences from MemoryDB (using a mock user ID for the MVP)
+        user_id = "user_123"
+        prefs = self.memory.get_preferences(user_id)
+        prefs_text = "\\n".join([f"- {k}: {v}" for k, v in prefs.items()]) if prefs else "None"
+        
         prompt = f"""
         Analyze this executive request and output a JSON plan.
+        
+        USER PREFERENCES:
+        {prefs_text}
         
         REQUEST: "{user_request}"
         

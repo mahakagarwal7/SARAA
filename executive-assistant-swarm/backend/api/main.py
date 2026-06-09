@@ -8,11 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
+# Telemetry
+from azure.monitor.opentelemetry import configure_azure_monitor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 # CRITICAL: Add the backend root directory to sys.path so imports work correctly
 # when running from the 'api' subfolder.
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agents.orchestrator_agent import OrchestratorAgent
+from utils.config import settings
 
 # Initialize FastAPI App
 app = FastAPI(
@@ -29,6 +34,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Telemetry
+if settings.APPLICATIONINSIGHTS_CONNECTION_STRING and "your-" not in settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+    try:
+        configure_azure_monitor(
+            connection_string=settings.APPLICATIONINSIGHTS_CONNECTION_STRING
+        )
+        FastAPIInstrumentor.instrument_app(app)
+        print("✅ Azure Application Insights telemetry enabled.")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize Azure Telemetry: {e}")
+else:
+    print("⚠️ APPLICATIONINSIGHTS_CONNECTION_STRING not found or is mock. Running without telemetry.")
 
 # --- Pydantic Models for Request/Response Validation ---
 

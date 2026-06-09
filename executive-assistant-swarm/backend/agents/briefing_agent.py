@@ -1,12 +1,14 @@
 import json
 from typing import Dict, Any
 from .base_agent import BaseAgent
+from utils.memory_db import MemoryDB
 
 class BriefingAgent(BaseAgent):
     """Agent responsible for generating executive briefings and PPT outlines."""
     
     def __init__(self):
         super().__init__(name="BriefingAgent", role="Executive Briefing Generator")
+        self.memory = MemoryDB()
 
     async def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -25,6 +27,10 @@ class BriefingAgent(BaseAgent):
         
         # Generate Markdown Briefing
         briefing_md = await self._generate_briefing(subject, research, calendar)
+        
+        # Save to persistent memory
+        self.log_action("Saving briefing to persistent memory...")
+        self.memory.save_briefing(subject, briefing_md)
         
         # Generate PPT Outline
         ppt_outline = await self._generate_ppt_outline(subject, briefing_md)

@@ -3,6 +3,7 @@ azure-identity==1.15.0
 azure-ai-inference==1.0.0b2
 msgraph-sdk==1.0.0
 msal==1.26.0
+azure-monitor-opentelemetry==1.6.0
 
 # Agent Framework
 autogen-agentchat>=0.2.0

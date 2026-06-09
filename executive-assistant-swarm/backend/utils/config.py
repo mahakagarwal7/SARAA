@@ -25,6 +25,9 @@ class Settings:
     BING_SEARCH_API_KEY: str = os.getenv("BING_SEARCH_API_KEY", "")
     BING_SEARCH_ENDPOINT: str = os.getenv("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search")
     
+    # Telemetry
+    APPLICATIONINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
+    
     # Application
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
