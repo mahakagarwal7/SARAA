@@ -1,0 +1,134 @@
+body {
+  margin: 0;
+  background-color: #faf9f8; /* Fluent UI light background */
+  font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+}
+
+.app-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+.app-header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.logo-icon {
+  color: #0078d4;
+  width: 32px;
+  height: 32px;
+}
+
+.subtitle {
+  color: #605e5c;
+}
+
+.input-card {
+  margin-bottom: 30px;
+  box-shadow: 0 1.6px 3.6px 0 rgba(0,0,0,0.132), 0 0.3px 0.9px 0 rgba(0,0,0,0.108);
+}
+
+.button-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+
+.status-card {
+  margin-bottom: 30px;
+  border-left: 4px solid #0078d4;
+}
+
+.agent-steps {
+  margin: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: #f3f2f1;
+  border-radius: 4px;
+}
+
+.spinner-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.error-card {
+  margin-bottom: 30px;
+  border-left: 4px solid #d13438;
+}
+
+.results-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.result-card {
+  box-shadow: 0 1.6px 3.6px 0 rgba(0,0,0,0.132), 0 0.3px 0.9px 0 rgba(0,0,0,0.108);
+}
+
+.highlight-card {
+  border-left: 4px solid #107c10;
+  background-color: #f0fdf4;
+}
+
+.log-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.log-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #edebe9;
+}
+
+.summary-text {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #323130;
+  margin-top: 10px;
+}
+
+.briefing-content {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 4px;
+  border: 1px solid #edebe9;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.briefing-content pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
