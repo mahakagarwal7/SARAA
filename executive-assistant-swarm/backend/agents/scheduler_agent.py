@@ -4,7 +4,7 @@ from .base_agent import BaseAgent
 from azure.identity import DeviceCodeCredential
 from azure.core.credentials import AccessToken
 from msgraph import GraphServiceClient
-from msgraph.generated.users.item.events.events_request_builder import EventsRequestBuilder
+
 from utils.config import settings
 
 class StaticTokenCredential:
@@ -113,10 +113,7 @@ class SchedulerAgent(BaseAgent):
             }
         
         # Get the next 5 events
-        request_config = EventsRequestBuilder.EventsRequestBuilderGetQueryParameters(
-            top=5,
-            orderby=["start/dateTime"]
-        )
+
         
         # Note: Depending on the exact msgraph-sdk version, the syntax might slightly vary.
         # This is the standard v1.0.0 approach.

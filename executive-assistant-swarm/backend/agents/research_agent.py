@@ -2,7 +2,7 @@ import json
 import asyncio
 from typing import Dict, Any, List
 from .base_agent import BaseAgent
-from tools.web_search import BingSearchTool
+from tools.web_search import TavilySearchTool
 from tools.web_scraper import WebScraperTool
 
 class ResearchAgent(BaseAgent):
@@ -10,7 +10,7 @@ class ResearchAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(name="ResearchAgent", role="Web Research Specialist")
-        self.search_tool = BingSearchTool()
+        self.search_tool = TavilySearchTool()
         self.scraper_tool = WebScraperTool()
 
     async def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:

@@ -27,3 +27,7 @@ httpx==0.26.0
 pytest==7.4.3
 pytest-asyncio==0.23.3
 pytest-cov==4.1.0
+
+# Document Generation
+fpdf2==2.7.9
+markdown==3.5.2

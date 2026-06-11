@@ -23,8 +23,10 @@ class BaseAgent(ABC):
         # Initialize Azure OpenAI client
         try:
             from utils.config import settings
+            # Azure AI Inference SDK expects the full deployment URL when targeting Azure OpenAI
+            full_endpoint = f"{settings.AZURE_OPENAI_ENDPOINT.rstrip('/')}/openai/deployments/{settings.AZURE_OPENAI_DEPLOYMENT_NAME}"
             self.client = ChatCompletionsClient(
-                endpoint=settings.AZURE_OPENAI_ENDPOINT,
+                endpoint=full_endpoint,
                 credential=AzureKeyCredential(settings.AZURE_OPENAI_API_KEY),
                 model=settings.AZURE_OPENAI_DEPLOYMENT_NAME
             )

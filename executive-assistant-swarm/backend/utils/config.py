@@ -21,9 +21,9 @@ class Settings:
     TENANT_ID: str = os.getenv("TENANT_ID", "")
     REDIRECT_URI: str = os.getenv("REDIRECT_URI", "http://localhost:8000/auth/callback")
     
-    # Bing Search
-    BING_SEARCH_API_KEY: str = os.getenv("BING_SEARCH_API_KEY", "")
-    BING_SEARCH_ENDPOINT: str = os.getenv("BING_SEARCH_ENDPOINT", "https://api.bing.microsoft.com/v7.0/search")
+    # Tavily Search
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
+    TAVILY_ENDPOINT: str = os.getenv("TAVILY_ENDPOINT", "https://api.tavily.com/search")
     
     # Telemetry
     APPLICATIONINSIGHTS_CONNECTION_STRING: str = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING", "")

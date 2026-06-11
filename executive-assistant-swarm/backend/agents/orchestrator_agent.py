@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 from .base_agent import BaseAgent
 from .research_agent import ResearchAgent
 from .briefing_agent import BriefingAgent
+from .writer_agent import WriterAgent
 from utils.memory_db import MemoryDB
 
 # We will import the real one later, but use a mock for now if needed
@@ -33,6 +34,7 @@ class OrchestratorAgent(BaseAgent):
         self.access_token = access_token
         self.research_agent = ResearchAgent()
         self.briefing_agent = BriefingAgent()
+        self.writer_agent = WriterAgent()
         self.memory = MemoryDB()
         
         # Use Mock if Graph API isn't ready, otherwise use Real
@@ -76,19 +78,32 @@ class OrchestratorAgent(BaseAgent):
             results["calendar"] = calendar_result
             execution_log.append({"agent": "SchedulerAgent", "status": calendar_result["status"]})
         
-        # 4. Generate Briefing (if both research and calendar are done)
-        if plan.get("needs_briefing", False) and results.get("research") and results.get("calendar"):
+        # 4. Generate Briefing
+        if plan.get("needs_briefing", False) and results.get("research"):
             self.log_action("Dispatching to Briefing Agent...")
+            calendar_data = results.get("calendar", {}).get("data", [])
             briefing_task = {
                 "meeting_subject": plan.get("meeting_subject", "Executive Meeting"),
                 "research_synthesis": results["research"].get("synthesis", ""),
-                "calendar_context": str(results["calendar"].get("data", []))
+                "calendar_context": str(calendar_data) if calendar_data else "No calendar context required/provided."
             }
             briefing_result = await self.briefing_agent.execute(briefing_task)
             results["briefing"] = briefing_result
             execution_log.append({"agent": "BriefingAgent", "status": briefing_result["status"]})
         
         # 5. Compile Final Response
+        if plan.get("needs_writer", False) and results.get("briefing"):
+            self.log_action("Dispatching to Writer Agent...")
+            writer_task = {
+                "briefing_markdown": results["briefing"].get("briefing_markdown", ""),
+                "user_request": user_request,
+                "document_type": plan.get("document_type", "document")
+            }
+            writer_result = await self.writer_agent.execute(writer_task)
+            results["writer"] = writer_result
+            execution_log.append({"agent": "WriterAgent", "status": writer_result["status"]})
+
+        # 6. Compile Final Response
         final_summary = await self._compile_summary(user_request, results)
         
         return {
@@ -134,17 +149,30 @@ class OrchestratorAgent(BaseAgent):
             execution_log.append({"agent": "SchedulerAgent", "status": "success"})
             yield json.dumps({"type": "log", "agent": "SchedulerAgent", "status": "Calendar check complete."})
 
-        if plan.get("needs_briefing", False) and results.get("research") and results.get("calendar"):
-            yield json.dumps({"type": "log", "agent": "BriefingAgent", "status": "Synthesizing research and calendar into executive briefing..."})
+        if plan.get("needs_briefing", False) and results.get("research"):
+            yield json.dumps({"type": "log", "agent": "BriefingAgent", "status": "Synthesizing research into executive briefing..."})
             await asyncio.sleep(2)
+            calendar_data = results.get("calendar", {}).get("data", [])
             briefing_task = {
                 "meeting_subject": plan.get("meeting_subject", "Executive Meeting"),
                 "research_synthesis": results["research"].get("synthesis", ""),
-                "calendar_context": str(results["calendar"].get("data", []))
+                "calendar_context": str(calendar_data) if calendar_data else "No calendar context required/provided."
             }
             results["briefing"] = await self.briefing_agent.execute(briefing_task)
             execution_log.append({"agent": "BriefingAgent", "status": "success"})
             yield json.dumps({"type": "log", "agent": "BriefingAgent", "status": "Briefing document generated."})
+
+        if plan.get("needs_writer", False) and results.get("briefing"):
+            yield json.dumps({"type": "log", "agent": "WriterAgent", "status": f"Drafting {plan.get('document_type', 'document')}..."})
+            await asyncio.sleep(2)
+            writer_task = {
+                "briefing_markdown": results["briefing"].get("briefing_markdown", ""),
+                "user_request": user_request,
+                "document_type": plan.get("document_type", "document")
+            }
+            results["writer"] = await self.writer_agent.execute(writer_task)
+            execution_log.append({"agent": "WriterAgent", "status": "success"})
+            yield json.dumps({"type": "log", "agent": "WriterAgent", "status": "Document draft generated."})
 
         yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Compiling final summary..."})
         final_summary = await self._compile_summary(user_request, results)
@@ -162,7 +190,7 @@ class OrchestratorAgent(BaseAgent):
         """Run the AutoGen GroupChat for dynamic orchestration."""
         import autogen
         from utils.config import settings
-        from tools.autogen_tools import perform_research, check_calendar, generate_briefing
+        from tools.autogen_tools import perform_research, check_calendar, generate_briefing, draft_document
         
         # Configure LLM for AutoGen
         llm_config = {
@@ -198,7 +226,13 @@ class OrchestratorAgent(BaseAgent):
         
         briefer = autogen.AssistantAgent(
             name="Briefer",
-            system_message="You are a briefing agent. Use the generate_briefing tool to create a final report once research and scheduling are done. Then output TERMINATE.",
+            system_message="You are a briefing agent. Use the generate_briefing tool to create a briefing document once research and scheduling are done.",
+            llm_config=llm_config
+        )
+
+        writer = autogen.AssistantAgent(
+            name="Writer",
+            system_message="You are a writer agent. Use the draft_document tool to write follow-up emails, memos, or announcements based on the briefing. If a draft is generated or not needed, output TERMINATE.",
             llm_config=llm_config
         )
         
@@ -224,9 +258,16 @@ class OrchestratorAgent(BaseAgent):
             description="Generate a briefing document based on research and calendar."
         )
         
+        autogen.agentchat.register_function(
+            draft_document,
+            caller=writer,
+            executor=user_proxy,
+            description="Draft a document (email/memo/announcement) based on the briefing and user request."
+        )
+        
         # Create GroupChat
         groupchat = autogen.GroupChat(
-            agents=[user_proxy, researcher, scheduler, briefer],
+            agents=[user_proxy, researcher, scheduler, briefer, writer],
             messages=[],
             max_round=12
         )
@@ -268,7 +309,9 @@ class OrchestratorAgent(BaseAgent):
             "research_query": "specific search query if needed",
             "needs_calendar": true/false,
             "needs_briefing": true/false,
-            "meeting_subject": "name of meeting if applicable"
+            "meeting_subject": "name of meeting if applicable",
+            "needs_writer": true/false,
+            "document_type": "email, memo, or announcement if applicable"
         }}
         """
         
@@ -291,7 +334,9 @@ class OrchestratorAgent(BaseAgent):
                 "research_query": user_request,
                 "needs_calendar": True,
                 "needs_briefing": True,
-                "meeting_subject": "General Meeting"
+                "meeting_subject": "General Meeting",
+                "needs_writer": False,
+                "document_type": ""
             }
 
     async def _compile_summary(self, original_request: str, results: Dict) -> str:

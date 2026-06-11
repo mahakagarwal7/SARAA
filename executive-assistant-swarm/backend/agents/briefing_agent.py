@@ -2,6 +2,7 @@ import json
 from typing import Dict, Any
 from .base_agent import BaseAgent
 from utils.memory_db import MemoryDB
+from utils.pdf_export import PDFExporter
 
 class BriefingAgent(BaseAgent):
     """Agent responsible for generating executive briefings and PPT outlines."""
@@ -32,6 +33,11 @@ class BriefingAgent(BaseAgent):
         self.log_action("Saving briefing to persistent memory...")
         self.memory.save_briefing(subject, briefing_md)
         
+        # Generate PDF
+        pdf_filename = f"briefing_{subject.replace(' ', '_').lower()}.pdf"
+        self.log_action(f"Exporting PDF to outputs/{pdf_filename}...")
+        pdf_path = PDFExporter.export_markdown_to_pdf(briefing_md, pdf_filename)
+        
         # Generate PPT Outline
         ppt_outline = await self._generate_ppt_outline(subject, briefing_md)
         
@@ -41,6 +47,7 @@ class BriefingAgent(BaseAgent):
             "status": "success",
             "meeting_subject": subject,
             "briefing_markdown": briefing_md,
+            "pdf_path": pdf_path,
             "ppt_outline": ppt_outline
         }
 
@@ -66,11 +73,15 @@ class BriefingAgent(BaseAgent):
         5. **POTENTIAL QUESTIONS** (2-3 questions they might ask)
         6. **ACTION ITEMS** (3 next steps)
         
-        Be concise, professional, and action-oriented. No fluff.
+        STRICT INSTRUCTIONS:
+        - Do NOT hallucinate, guess, or make assumptions.
+        - Only use the exact facts provided in the RESEARCH FINDINGS and CALENDAR CONTEXT.
+        - Be highly detailed but strictly relevant to the point.
+        - Be concise, professional, and action-oriented. No fluff.
         """
         
         messages = self._build_messages(
-            system_prompt="You are an elite executive assistant. Create crisp, high-impact briefing documents.",
+            system_prompt="You are an elite executive assistant. Create crisp, high-impact briefing documents. Strictly enforce factual reporting. Do not hallucinate, guess, or make assumptions. Only use the provided research and calendar data. Be highly detailed but strictly relevant to the point.",
             user_message=prompt
         )
         

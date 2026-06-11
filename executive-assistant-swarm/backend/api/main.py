@@ -9,8 +9,13 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 
 # Telemetry
-from azure.monitor.opentelemetry import configure_azure_monitor
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+try:
+    from azure.monitor.opentelemetry import configure_azure_monitor
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    TELEMETRY_AVAILABLE = True
+except ImportError as e:
+    print(f"Telemetry packages not available: {e}")
+    TELEMETRY_AVAILABLE = False
 
 # CRITICAL: Add the backend root directory to sys.path so imports work correctly
 # when running from the 'api' subfolder.
@@ -36,17 +41,17 @@ app.add_middleware(
 )
 
 # Initialize Telemetry
-if settings.APPLICATIONINSIGHTS_CONNECTION_STRING and "your-" not in settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+if TELEMETRY_AVAILABLE and settings.APPLICATIONINSIGHTS_CONNECTION_STRING and "your-" not in settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
     try:
         configure_azure_monitor(
             connection_string=settings.APPLICATIONINSIGHTS_CONNECTION_STRING
         )
         FastAPIInstrumentor.instrument_app(app)
-        print("✅ Azure Application Insights telemetry enabled.")
+        print("Azure Application Insights telemetry enabled.")
     except Exception as e:
-        print(f"⚠️ Failed to initialize Azure Telemetry: {e}")
+        print(f"Failed to initialize Azure Telemetry: {e}")
 else:
-    print("⚠️ APPLICATIONINSIGHTS_CONNECTION_STRING not found or is mock. Running without telemetry.")
+    print("APPLICATIONINSIGHTS_CONNECTION_STRING not found or is mock. Running without telemetry.")
 
 # --- Pydantic Models for Request/Response Validation ---
 

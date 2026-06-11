@@ -5,54 +5,64 @@ from utils.config import settings
 
 logger = logging.getLogger(__name__)
 
-class BingSearchTool:
-    """Tool for performing Bing web searches"""
+class TavilySearchTool:
+    """Tool for performing web searches using Tavily API"""
     
     def __init__(self):
-        self.api_key = settings.BING_SEARCH_API_KEY
-        self.endpoint = settings.BING_SEARCH_ENDPOINT
-        self.headers = {"Ocp-Apim-Subscription-Key": self.api_key}
+        self.api_key = settings.TAVILY_API_KEY
+        self.endpoint = settings.TAVILY_ENDPOINT
     
     async def search(self, query: str, count: int = 5) -> List[Dict]:
         """
-        Search the web using Bing API
+        Search the web using Tavily API
         
         Args:
             query: Search query string
-            count: Number of results to return (max 50)
+            count: Number of results to return
         
         Returns:
             List of search results
         """
         if not self.api_key:
-            logger.warning("Bing API key not configured, returning mock results")
+            logger.warning("Tavily API key not configured, returning mock results")
             return self._get_mock_results(query, count)
         
-        params = {
-            "q": query,
-            "count": min(count, 50),  # Bing API max is 50
-            "mkt": "en-US",
-            "safeSearch": "Moderate"
+        payload = {
+            "api_key": self.api_key,
+            "query": query,
+            "search_depth": "basic",
+            "max_results": min(count, 10),  # Limit to 10 for basic requests
+            "include_answer": False
         }
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(
+                async with session.post(
                     self.endpoint,
-                    headers=self.headers,
-                    params=params,
+                    json=payload,
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        results = data.get("webPages", {}).get("value", [])
-                        logger.info(f"Bing search returned {len(results)} results for: {query}")
+                        raw_results = data.get("results", [])
+                        
+                        # Map Tavily fields to the format expected by the ResearchAgent
+                        results = []
+                        for r in raw_results:
+                            results.append({
+                                "name": r.get("title", ""),
+                                "url": r.get("url", ""),
+                                "snippet": r.get("content", "")
+                            })
+                            
+                        logger.info(f"Tavily search returned {len(results)} results for: {query}")
                         return results
                     else:
-                        logger.error(f"Bing API error: {response.status}, returning mock results")
+                        error_text = await response.text()
+                        logger.error(f"Tavily API error: {response.status} - {error_text}, returning mock results")
                         return self._get_mock_results(query, count)
         except Exception as e:
-            logger.error(f"Bing search failed: {e}")
+            logger.error(f"Tavily search failed: {e}")
             return self._get_mock_results(query, count)
     
     def _get_mock_results(self, query: str, count: int) -> List[Dict]:

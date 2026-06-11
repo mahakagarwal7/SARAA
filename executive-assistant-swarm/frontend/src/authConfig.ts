@@ -1,4 +1,4 @@
-import { Configuration, PopupRequest } from "@azure/msal-browser";
+import type { Configuration, PopupRequest } from "@azure/msal-browser";
 
 /**
  * Configuration object to be passed to MSAL instance on creation. 
@@ -7,15 +7,14 @@ import { Configuration, PopupRequest } from "@azure/msal-browser";
  */
 export const msalConfig: Configuration = {
   auth: {
-    // TODO: Teammate to replace this with the real Azure App Registration Client ID
-    clientId: "YOUR_CLIENT_ID_HERE", 
-    // "common" is used for multi-tenant. Replace with tenant ID if single-tenant.
-    authority: "https://login.microsoftonline.com/common",
+    // Replaced with the real Azure App Registration Client ID from backend/.env
+    clientId: "30f40401-2bb1-4460-8208-5b22674761f0", 
+    // Using the specific tenant ID from backend/.env instead of "common"
+    authority: "https://login.microsoftonline.com/ec565537-4281-4573-9d9b-20d432ff6805",
     redirectUri: window.location.origin,
   },
   cache: {
     cacheLocation: "sessionStorage", // This configures where your cache will be stored
-    storeAuthStateInCookie: false, // Set this to "true" if you are having issues on IE11 or Edge
   }
 };
 

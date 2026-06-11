@@ -22,3 +22,13 @@ async def generate_briefing(meeting_subject: str, research_synthesis: str, calen
         "research_synthesis": research_synthesis,
         "calendar_context": calendar_context
     })
+
+async def draft_document(briefing_markdown: str, user_request: str, document_type: str = "document") -> Dict[str, Any]:
+    """Draft a follow-up email, memo, or announcement based on the briefing."""
+    from agents.writer_agent import WriterAgent
+    agent = WriterAgent()
+    return await agent.execute({
+        "briefing_markdown": briefing_markdown,
+        "user_request": user_request,
+        "document_type": document_type
+    })
