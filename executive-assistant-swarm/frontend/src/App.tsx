@@ -1,45 +1,119 @@
-import { useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { 
   FluentProvider, 
-  webLightTheme, 
+  webDarkTheme, 
   Button, 
-  Textarea, 
   Title1, 
   Text, 
-  Card, 
-  CardHeader, 
-  Spinner,
-  Badge,
-  Field
+  Toaster,
+  useId,
+  useToastController,
+  Toast,
+  ToastTitle,
+  ToastBody
 } from '@fluentui/react-components';
-import { 
+import {
   Bot24Regular, 
   Send24Regular, 
-  CheckmarkCircle24Regular,
-  Play24Regular 
+  Stop24Regular,
+  Search24Regular,
+  Edit24Regular,
+  CalendarLtr24Regular,
+  Person24Regular
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
 import { executeSwarmStream, type SwarmResult } from './services/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import * as THREE from 'three';
+// @ts-ignore
+import NET from 'vanta/src/vanta.net';
 import './App.css';
 
-function App() {
+function getAgentColor(agentName: string) {
+  const name = agentName.toLowerCase();
+  if (name.includes('research')) return '#3b82f6'; 
+  if (name.includes('write') || name.includes('briefing')) return '#10b981'; 
+  if (name.includes('schedul') || name.includes('calendar')) return '#f59e0b'; 
+  if (name.includes('orchestrator') || name.includes('executor')) return '#8b5cf6'; 
+  return '#64748b'; 
+}
+
+function getAgentIcon(agentName: string) {
+  const name = agentName.toLowerCase();
+  if (name.includes('research')) return <Search24Regular />;
+  if (name.includes('write') || name.includes('briefing')) return <Edit24Regular />;
+  if (name.includes('schedul') || name.includes('calendar')) return <CalendarLtr24Regular />;
+  if (name.includes('orchestrator') || name.includes('executor')) return <Bot24Regular />;
+  return <Person24Regular />;
+}
+
+function AppContent() {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<SwarmResult | null>(null);
-  const [error, setError] = useState('');
   const [liveLogs, setLiveLogs] = useState<{agent: string, status: string}[]>([]);
+  const [isInputEmptyError, setIsInputEmptyError] = useState(false);
+
+  const vantaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let vantaEffect: any;
+    if (vantaRef.current) {
+      vantaEffect = NET({
+        el: vantaRef.current,
+        THREE: THREE,
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        scale: 1.00,
+        scaleMobile: 1.00,
+        color: 0xfacc15,
+        backgroundColor: 0x050505,
+        points: 12.00,
+        maxDistance: 22.00,
+        spacing: 16.00,
+        showDots: true
+      });
+    }
+    return () => {
+      if (vantaEffect) vantaEffect.destroy();
+    };
+  }, []);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const toasterId = useId("toaster");
+  const { dispatchToast } = useToastController(toasterId);
 
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
+  const isIdle = !isLoading && !result && liveLogs.length === 0;
+
+  // Auto-resize textarea
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+    }
+  }, [prompt]);
+
   const handleExecute = async () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim()) {
+      setIsInputEmptyError(true);
+      setTimeout(() => setIsInputEmptyError(false), 600);
+      return;
+    }
     
     setIsLoading(true);
     setResult(null);
-    setError('');
     setLiveLogs([]);
+
+    abortControllerRef.current = new AbortController();
 
     let token = undefined;
     if (isAuthenticated && accounts.length > 0) {
@@ -57,140 +131,154 @@ function App() {
     try {
       await executeSwarmStream(prompt, token, (event) => {
         if (event.type === 'log') {
-          setLiveLogs((prev) => [...prev, { agent: event.agent, status: event.status || event.message }]);
+          setLiveLogs((prev: any[]) => [...prev, { agent: event.agent, status: event.status || event.message }]);
         } else if (event.type === 'result') {
           setResult(event.data);
           setIsLoading(false);
         } else if (event.type === 'error') {
-          setError(event.message);
+          dispatchToast(
+            <Toast><ToastTitle>Execution Failed</ToastTitle><ToastBody>{event.message}</ToastBody></Toast>,
+            { intent: "error" }
+          );
           setIsLoading(false);
         }
-      });
+      }, abortControllerRef.current.signal);
     } catch (err: any) {
-      setError(err.message || 'Failed to connect to the Agent Swarm. Is the backend running?');
+      if (err.name === 'AbortError') {
+        dispatchToast(
+          <Toast><ToastTitle>Execution Stopped</ToastTitle><ToastBody>Swarm execution was manually aborted.</ToastBody></Toast>,
+          { intent: "warning" }
+        );
+      } else {
+        dispatchToast(
+          <Toast><ToastTitle>Connection Failed</ToastTitle><ToastBody>{err.message || 'Failed to connect to the Agent Swarm.'}</ToastBody></Toast>,
+          { intent: "error" }
+        );
+      }
       setIsLoading(false);
+    } finally {
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
   return (
-    <FluentProvider theme={webLightTheme}>
-      <div className="app-container">
-        {/* Header */}
-        <header className="app-header">
-          <div className="logo-container">
-            <Bot24Regular className="logo-icon" />
-            <Title1 as="h1">Executive Assistant Agent Swarm</Title1>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <Text size={300} className="subtitle" style={{ margin: 0 }}>
-              Autonomous AI agents orchestrating research, scheduling, and briefing generation.
-            </Text>
-            {isAuthenticated ? (
-              <Button appearance="secondary" onClick={() => instance.logoutPopup()}>Sign Out ({accounts[0]?.name})</Button>
-            ) : (
-              <Button appearance="primary" onClick={() => instance.loginPopup(loginRequest).catch(e => console.error(e))}>Sign In with Microsoft</Button>
-            )}
-          </div>
-        </header>
+    <>
+      {/* True 3D WebGL Background */}
+      <div ref={vantaRef} className="vanta-bg-container"></div>
 
-        {/* Input Section */}
-        <Card className="input-card">
-          <CardHeader 
-            header={<Text weight="semibold">Enter Executive Request</Text>} 
-            description="The Orchestrator will automatically decompose this into tasks for the Research, Scheduler, and Briefing agents."
-          />
-          <Field>
-            <Textarea 
-              appearance="outline" 
-              placeholder="e.g., I have a strategy meeting with Contoso next week. Research their latest AI product launches, check my calendar for conflicts, and generate a prep briefing."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              disabled={isLoading}
-            />
-          </Field>
-          <div className="button-container">
-            <Button 
-              appearance="primary" 
-              icon={<Send24Regular />} 
-              onClick={handleExecute} 
-              disabled={isLoading || !prompt.trim()}
-              size="large"
-            >
-              {isLoading ? 'Swarm Processing...' : 'Execute Swarm'}
-            </Button>
-          </div>
-        </Card>
-
-        {/* Loading / Agent Status Section */}
-        {isLoading && !result && (
-          <Card className="status-card">
-            <CardHeader 
-              header={<Text weight="semibold">🔄 Agent Swarm Active</Text>} 
-            />
-            <div className="agent-steps" style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
-              {liveLogs.map((log, index) => (
-                <div key={index} className="step active" style={{ display: 'flex', alignItems: 'center' }}>
-                  <Badge appearance="filled" color="brand">{index + 1}</Badge>
-                  <Text weight="semibold" style={{ marginLeft: 8, marginRight: 8 }}>{log.agent}:</Text> 
-                  <Text>{log.status}</Text>
-                </div>
-              ))}
-            </div>
-            <div className="spinner-container" style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
-              <Spinner size="large" label="Agents are collaborating..." />
-            </div>
-          </Card>
-        )}
-
-        {/* Error Section */}
-        {error && (
-          <Card className="error-card">
-            <Text weight="semibold" style={{color: 'red'}}>⚠️ Error: {error}</Text>
-          </Card>
-        )}
-
-        {/* Results Section */}
-        {result && (
-          <div className="results-container">
-            {/* Execution Log */}
-            <Card className="result-card">
-              <CardHeader 
-                header={<Text weight="semibold">📊 Execution Log</Text>} 
-                image={<Play24Regular />}
-              />
-              <div className="log-container">
-                {result.execution_log.map((log, index) => (
-                  <div key={index} className="log-item">
-                    <CheckmarkCircle24Regular style={{ color: '#107c10' }} />
-                    <Text><strong>{log.agent}:</strong> {log.status}</Text>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Final Summary */}
-            <Card className="result-card highlight-card">
-              <CardHeader 
-                header={<Text weight="semibold" size={400}>📝 Executive Summary</Text>} 
-              />
-              <Text size={300} className="summary-text">{result.final_summary}</Text>
-            </Card>
-
-            {/* Detailed Briefing */}
-            {result.results?.briefing && (
-              <Card className="result-card">
-                <CardHeader 
-                  header={<Text weight="semibold" size={400}>📋 Generated Briefing Document</Text>} 
-                />
-                <div className="briefing-content">
-                  <pre>{result.results.briefing.briefing_markdown}</pre>
-                </div>
-              </Card>
-            )}
-          </div>
+      <Toaster toasterId={toasterId} />
+      
+      {/* Top Right Auth */}
+      <div className="auth-container">
+        {isAuthenticated ? (
+          <Button appearance="subtle" onClick={() => instance.logoutPopup()} aria-label="Sign out">Sign Out ({accounts[0]?.name})</Button>
+        ) : (
+          <Button appearance="subtle" onClick={() => instance.loginPopup(loginRequest).catch(e => console.error(e))} aria-label="Sign in">Sign In</Button>
         )}
       </div>
+
+      <div className={`app-container ${isIdle ? 'state-idle' : 'state-active'}`}>
+        
+        {/* Brand Header */}
+        <div className="header-minimal">
+          <Bot24Regular className="logo-icon-minimal" />
+          <Title1 as="h1" className="brand-title">SARAA</Title1>
+        </div>
+        
+        {isIdle && (
+          <Text className="brand-subtitle">Strategic Autonomous Research & Action Agent</Text>
+        )}
+
+        {/* Input Bar */}
+        <div className="input-section">
+          <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`}>
+            <textarea 
+              ref={textareaRef}
+              placeholder="Deploy the swarm..."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              disabled={isLoading}
+              className="search-textarea"
+              rows={1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleExecute();
+                }
+              }}
+            />
+            <div className="search-actions">
+              {isLoading ? (
+                <Button appearance="subtle" icon={<Stop24Regular />} onClick={handleStop} aria-label="Stop Execution" className="action-btn stop-btn" />
+              ) : (
+                <Button appearance="subtle" icon={<Send24Regular />} onClick={handleExecute} aria-label="Execute Swarm" className="action-btn send-btn" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Orchestration Pipeline (Logs) */}
+        {!isIdle && !result && (
+          <div className="pipeline-container fade-in">
+            {liveLogs.map((log: any, index: number) => (
+              <div key={index} className="pipeline-step fade-in-up">
+                <div className="step-icon" style={{ color: getAgentColor(log.agent), borderColor: getAgentColor(log.agent) }}>
+                  {getAgentIcon(log.agent)}
+                </div>
+                <div className="step-content">
+                  <span className="step-agent" style={{ color: getAgentColor(log.agent) }}>{log.agent}</span>
+                  <span className="step-status">{log.status}</span>
+                </div>
+              </div>
+            ))}
+            
+            <div className="pipeline-step active-step fade-in-up">
+              <div className="step-icon pulsing-icon" style={{ color: '#FACC15', borderColor: '#FACC15' }}>
+                <Bot24Regular />
+              </div>
+              <div className="step-content">
+                <span className="step-agent" style={{ color: '#FACC15' }}>{liveLogs.length > 0 ? liveLogs[liveLogs.length - 1].agent : 'Orchestrator'} is working</span>
+                <span className="dots"><span>.</span><span>.</span><span>.</span></span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Final Results (Notion Style) */}
+        {result && (
+          <div className="results-document doc-entrance">
+            <div className="doc-header">
+              <Text className="doc-meta">Status: Complete • {result.execution_log.length} steps executed</Text>
+            </div>
+            
+            <div className="markdown-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.final_summary}</ReactMarkdown>
+            </div>
+
+            {result.results?.briefing && (
+              <div className="markdown-body briefing-section">
+                <hr className="doc-divider" />
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.results.briefing.briefing_markdown}</ReactMarkdown>
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <FluentProvider theme={webDarkTheme}>
+      <AppContent />
     </FluentProvider>
   );
 }
