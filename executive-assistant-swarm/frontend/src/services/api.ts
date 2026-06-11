@@ -48,7 +48,7 @@ export const executeSwarmStream = async (
     signal,
     body: JSON.stringify({
       user_prompt: prompt,
-      use_mock_scheduler: !token // Force mock mode if no token is provided
+      use_mock_scheduler: false // Switch to True AutoGen Swarm Mode
     })
   });
 

@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+import jwt
 
 # Telemetry
 try:
@@ -23,6 +24,21 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agents.orchestrator_agent import OrchestratorAgent
 from utils.config import settings
+from utils.memory_db import MemoryDB
+
+memory_db = MemoryDB()
+
+def get_user_id_from_token(token: Optional[str]) -> str:
+    if not token:
+        return "user_123"  # Fallback
+    try:
+        # Decode without verifying signature since MSAL already verified on frontend
+        # and we don't have the public keys loaded for this MVP.
+        decoded = jwt.decode(token, options={"verify_signature": False})
+        # Use email or object ID as the user identifier
+        return decoded.get("preferred_username") or decoded.get("oid") or "user_123"
+    except Exception:
+        return "user_123"
 
 # Initialize FastAPI App
 app = FastAPI(
@@ -69,6 +85,10 @@ class SwarmResponse(BaseModel):
     execution_log: List[ExecutionLogItem]
     results: Dict[str, Any]
 
+class PreferenceRequest(BaseModel):
+    key: str
+    value: str
+
 # --- API Endpoints ---
 
 @app.get("/")
@@ -99,13 +119,16 @@ async def execute_swarm(
     token = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
+        
+    user_id = get_user_id_from_token(token)
 
     try:
         # Initialize the orchestrator
         # Note: In a production app, you'd pool this. For a hackathon, instantiating per request is fine.
         orchestrator = OrchestratorAgent(
             use_mock_scheduler=request.use_mock_scheduler,
-            access_token=token
+            access_token=token,
+            user_id=user_id
         )
         
         # Execute the swarm (this is async and might take 10-30 seconds)
@@ -136,11 +159,14 @@ async def execute_swarm_stream(
     token = None
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ")[1]
+        
+    user_id = get_user_id_from_token(token)
 
     async def event_generator():
         orchestrator = OrchestratorAgent(
             use_mock_scheduler=request.use_mock_scheduler,
-            access_token=token
+            access_token=token,
+            user_id=user_id
         )
         try:
             async for chunk in orchestrator.execute_stream(request.user_prompt):
@@ -151,6 +177,26 @@ async def execute_swarm_stream(
             yield f"data: {error_msg}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/api/preferences")
+async def get_preferences(authorization: Optional[str] = Header(None)):
+    """Fetch user preferences from MemoryDB."""
+    token = authorization.split(" ")[1] if authorization and authorization.startswith("Bearer ") else None
+    user_id = get_user_id_from_token(token)
+    return memory_db.get_preferences(user_id)
+
+@app.post("/api/preferences")
+async def save_preference(req: PreferenceRequest, authorization: Optional[str] = Header(None)):
+    """Save a user preference to MemoryDB."""
+    token = authorization.split(" ")[1] if authorization and authorization.startswith("Bearer ") else None
+    user_id = get_user_id_from_token(token)
+    memory_db.save_preference(user_id, req.key, req.value)
+    return {"status": "success", "message": "Preference saved."}
+
+@app.get("/api/history")
+async def get_history(limit: int = 5):
+    """Fetch recent briefing history from MemoryDB."""
+    return memory_db.get_past_briefings(limit)
 
 # --- Run Server Locally ---
 if __name__ == "__main__":

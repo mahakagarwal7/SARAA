@@ -28,10 +28,11 @@ class MockSchedulerAgent(BaseAgent):
 class OrchestratorAgent(BaseAgent):
     """The central brain that coordinates the agent swarm."""
     
-    def __init__(self, use_mock_scheduler: bool = False, access_token: str = None):
+    def __init__(self, use_mock_scheduler: bool = False, access_token: str = None, user_id: str = "user_123"):
         super().__init__(name="Orchestrator", role="Swarm Coordinator")
         self.use_mock_scheduler = use_mock_scheduler
         self.access_token = access_token
+        self.user_id = user_id
         self.research_agent = ResearchAgent()
         self.briefing_agent = BriefingAgent()
         self.writer_agent = WriterAgent()
@@ -121,8 +122,58 @@ class OrchestratorAgent(BaseAgent):
         if not self.use_mock_scheduler:
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Initializing AutoGen Swarm..."})
             await asyncio.sleep(0.5)
-            # For this MVP step, we just run the swarm and yield the result
-            result = await self._run_autogen_swarm(user_request)
+            
+            import sys
+            import contextlib
+            
+            queue = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+            
+            class QueueStream:
+                def write(self, text):
+                    if text.strip():
+                        # AutoGen prints synchronously, so we must schedule it on the event loop
+                        loop.call_soon_threadsafe(queue.put_nowait, text)
+                def flush(self):
+                    pass
+                    
+            stream = QueueStream()
+            
+            # Run the swarm in a completely separate thread because AutoGen's underlying 
+            # LLM client uses synchronous requests that block the FastAPI event loop.
+            async def run_swarm():
+                def _sync_wrapper():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        with contextlib.redirect_stdout(stream):
+                            return new_loop.run_until_complete(self._run_autogen_swarm(user_request))
+                    finally:
+                        new_loop.close()
+                return await asyncio.to_thread(_sync_wrapper)
+                    
+            task = asyncio.create_task(run_swarm())
+            
+            yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Swarm deployed. Waiting for agents..."})
+            
+            while not task.done():
+                try:
+                    line = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    if " (to " in line:
+                        agent = line.split(" (to ")[0].strip()
+                        yield json.dumps({"type": "log", "agent": agent, "status": "Drafting response..."})
+                    elif "Suggested function call:" in line:
+                        yield json.dumps({"type": "log", "agent": "System", "status": "Invoking Tool Execution..."})
+                    elif "TERMINATE" in line:
+                        yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Swarm reached consensus. Finalizing..."})
+                except asyncio.TimeoutError:
+                    continue
+            
+            # Drain queue
+            while not queue.empty():
+                queue.get_nowait()
+                
+            result = task.result()
             yield json.dumps({"type": "result", "data": result})
             return
 
@@ -188,6 +239,9 @@ class OrchestratorAgent(BaseAgent):
 
     async def _run_autogen_swarm(self, user_request: str) -> Dict[str, Any]:
         """Run the AutoGen GroupChat for dynamic orchestration."""
+        import os
+        os.environ["AUTOGEN_USE_DOCKER"] = "False"
+        
         import autogen
         from utils.config import settings
         from tools.autogen_tools import perform_research, check_calendar, generate_briefing, draft_document
@@ -209,7 +263,8 @@ class OrchestratorAgent(BaseAgent):
             name="Executive",
             system_message="An executive requesting assistance. Execute functions when suggested.",
             human_input_mode="NEVER",
-            max_consecutive_auto_reply=10
+            max_consecutive_auto_reply=10,
+            code_execution_config=False
         )
         
         researcher = autogen.AssistantAgent(
@@ -290,9 +345,8 @@ class OrchestratorAgent(BaseAgent):
 
     async def _decompose_request(self, user_request: str) -> Dict[str, Any]:
         """Use LLM to break down the user prompt into a structured JSON plan."""
-        # Fetch user preferences from MemoryDB (using a mock user ID for the MVP)
-        user_id = "user_123"
-        prefs = self.memory.get_preferences(user_id)
+        # Fetch user preferences from MemoryDB (using the real user ID)
+        prefs = self.memory.get_preferences(self.user_id)
         prefs_text = "\\n".join([f"- {k}: {v}" for k, v in prefs.items()]) if prefs else "None"
         
         prompt = f"""

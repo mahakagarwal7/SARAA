@@ -319,14 +319,12 @@ body {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(10, 10, 10, 0.5); /* Deep Acrylic */
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08); /* Translucent iridescent border */
-  border-radius: 20px;
-  padding: 32px 40px;
-  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  margin-top: 40px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px; /* Correct small padding for icon */
 }
 
 .step-icon svg {

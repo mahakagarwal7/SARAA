@@ -26,22 +26,14 @@ class SchedulerAgent(BaseAgent):
         """Initialize Microsoft Graph Client using provided access token or fallback to Device Code Flow."""
         self.log_action("Initializing Microsoft Graph Client...")
         
-        if not self.access_token and ("your-" in settings.TENANT_ID or "your-" in settings.CLIENT_ID):
-            self.log_action("Dummy MS Graph credentials detected and no token provided. Operating in mock mode.", level="WARNING")
+        if not self.access_token:
+            self.log_action("No access token provided. Operating in mock mode to prevent terminal blocking.", level="WARNING")
             self.mock_mode = True
             return None
 
         self.mock_mode = False
-        
-        if self.access_token:
-            self.log_action("Using provided Entra ID Access Token from frontend.")
-            credential = StaticTokenCredential(self.access_token)
-        else:
-            self.log_action("Using Device Code Flow for local backend testing.")
-            credential = DeviceCodeCredential(
-                client_id=settings.CLIENT_ID,
-                tenant_id=settings.TENANT_ID
-            )
+        self.log_action("Using provided Entra ID Access Token from frontend.")
+        credential = StaticTokenCredential(self.access_token)
         
         # Scopes needed for Calendar and Mail
         scopes = ['Calendars.Read', 'Calendars.ReadWrite', 'Mail.Send', 'User.Read']
