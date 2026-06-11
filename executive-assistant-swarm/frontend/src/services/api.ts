@@ -31,7 +31,8 @@ export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
 export const executeSwarmStream = async (
   prompt: string,
   token: string | undefined,
-  onEvent: (event: any) => void
+  onEvent: (event: any) => void,
+  signal?: AbortSignal
 ): Promise<void> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -44,6 +45,7 @@ export const executeSwarmStream = async (
   const response = await fetch(`${API_BASE_URL}/execute/stream`, {
     method: 'POST',
     headers,
+    signal,
     body: JSON.stringify({
       user_prompt: prompt,
       use_mock_scheduler: !token // Force mock mode if no token is provided

@@ -19,7 +19,9 @@ import {
   Search24Regular,
   Edit24Regular,
   CalendarLtr24Regular,
-  Person24Regular
+  Person24Regular,
+  Mic24Regular,
+  MicOff24Regular
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
@@ -55,8 +57,74 @@ function AppContent() {
   const [result, setResult] = useState<SwarmResult | null>(null);
   const [liveLogs, setLiveLogs] = useState<{agent: string, status: string}[]>([]);
   const [isInputEmptyError, setIsInputEmptyError] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
 
   const vantaRef = useRef<HTMLDivElement>(null);
+  const searchBarRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Magnetic Cursor Tracking for the Vercel Glow
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!searchBarRef.current) return;
+    const rect = searchBarRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    searchBarRef.current.style.setProperty('--mouse-x', `${x}px`);
+    searchBarRef.current.style.setProperty('--mouse-y', `${y}px`);
+  };
+
+  // Initialize SpeechRecognition
+  useEffect(() => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = true;
+      
+      recognitionRef.current.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setPrompt(prev => prev + (prev ? ' ' : '') + finalTranscript);
+        }
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        setSpeechError('Speech recognition error: ' + event.error);
+        setIsListening(false);
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    } else {
+      setSpeechError('Speech recognition is not supported in this browser.');
+    }
+  }, []);
+
+  const toggleListen = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      setSpeechError(null);
+      try {
+        recognitionRef.current?.start();
+        setIsListening(true);
+      } catch (e) {
+        console.error("Speech recognition error:", e);
+      }
+    }
+  };
 
   useEffect(() => {
     let vantaEffect: any;
@@ -197,7 +265,11 @@ function AppContent() {
 
         {/* Input Bar */}
         <div className="input-section">
-          <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`}>
+          <div 
+            className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`}
+            ref={searchBarRef}
+            onMouseMove={handleMouseMove}
+          >
             <textarea 
               ref={textareaRef}
               placeholder="Deploy the swarm..."
@@ -214,6 +286,14 @@ function AppContent() {
               }}
             />
             <div className="search-actions">
+              <Button
+                appearance="transparent"
+                icon={isListening ? <MicOff24Regular /> : <Mic24Regular />}
+                onClick={toggleListen}
+                className={`mic-button ${isListening ? 'listening' : ''}`}
+                title={speechError || "Voice Dictation"}
+                aria-label="Voice Dictation"
+              />
               {isLoading ? (
                 <Button appearance="subtle" icon={<Stop24Regular />} onClick={handleStop} aria-label="Stop Execution" className="action-btn stop-btn" />
               ) : (
