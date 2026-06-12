@@ -33,7 +33,7 @@ class PDFExporter:
         except Exception as e:
             print(f"Error writing HTML to PDF: {e}. Falling back to plain text.")
             safe_text = markdown_text.encode('latin-1', 'replace').decode('latin-1')
-            pdf.multi_cell(0, 10, txt=safe_text)
+            pdf.multi_cell(0, 10, text=safe_text)
             
         # Save the PDF
         pdf.output(output_path)
