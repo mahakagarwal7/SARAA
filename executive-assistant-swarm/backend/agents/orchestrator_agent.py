@@ -1,5 +1,6 @@
 import json
 import asyncio
+# Force uvicorn reload to clear deadlocked threads
 from typing import Dict, Any, List
 from .base_agent import BaseAgent
 from .research_agent import ResearchAgent
@@ -47,17 +48,26 @@ class OrchestratorAgent(BaseAgent):
             self.scheduler_agent = SchedulerAgent(access_token=access_token)
             self.log_action("✅ Orchestrator initialized with REAL Graph Scheduler")
 
-    async def execute(self, user_request: str) -> Dict[str, Any]:
+    async def execute(self, user_request: str, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """Main entry point for the swarm."""
         self.log_action(f"Received user request: '{user_request}'")
         
         if not self.use_mock_scheduler:
             self.log_action("Running True AutoGen Swarm (Production Mode)...")
-            return await self._run_autogen_swarm(user_request)
+            return await self._run_autogen_swarm(user_request, chat_history)
             
         self.log_action("Running Sequential Swarm (Mock Mode)...")
+        
+        # Format chat history into the prompt for the decompose planner
+        context_prefix = ""
+        if chat_history:
+            history_text = "\n\n".join([f"**{msg.get('role', 'unknown').upper()}**:\n{msg.get('content', '')}" for msg in chat_history[-3:]])
+            context_prefix = f"--- PREVIOUS CONVERSATION HISTORY (Last 3 messages) ---\n{history_text}\n--- END HISTORY ---\n\n"
+            
+        full_request = context_prefix + user_request
+
         # 1. Decompose the request into a plan
-        plan = await self._decompose_request(user_request)
+        plan = await self._decompose_request(full_request)
         self.log_action(f"Execution Plan: {json.dumps(plan, indent=2)}")
         
         execution_log = []
@@ -114,11 +124,11 @@ class OrchestratorAgent(BaseAgent):
             "final_summary": final_summary
         }
 
-    async def execute_stream(self, user_request: str):
+    async def execute_stream(self, user_request: str, chat_history: List[Dict[str, str]] = None):
         """Async generator that yields SSE JSON strings."""
         try:
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Received user request..."})
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.1)
 
             if not self.use_mock_scheduler:
                 yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Initializing AutoGen Swarm..."})
@@ -164,7 +174,7 @@ class OrchestratorAgent(BaseAgent):
                         asyncio.set_event_loop(new_loop)
                         try:
                             with contextlib.redirect_stdout(stream):
-                                return new_loop.run_until_complete(self._run_autogen_swarm(user_request))
+                                return new_loop.run_until_complete(self._run_autogen_swarm(user_request, chat_history))
                         finally:
                             new_loop.close()
                     return await asyncio.to_thread(_sync_wrapper)
@@ -183,6 +193,8 @@ class OrchestratorAgent(BaseAgent):
                             yield json.dumps({"type": "log", "agent": "System", "status": "Invoking Tool Execution..."})
                         elif "TERMINATE" in line:
                             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Swarm reached consensus. Finalizing..."})
+                        elif "Error" in line or "Exception" in line or "RateLimit" in line:
+                            yield json.dumps({"type": "log", "agent": "System", "status": f"Warning: {line[:100]}..."})
                     except asyncio.TimeoutError:
                         yield ": keep-alive\n\n"
                         continue
@@ -200,9 +212,17 @@ class OrchestratorAgent(BaseAgent):
                     yield json.dumps({"type": "result", "data": {"status": "error", "message": str(e), "execution_log": [{"agent": "Orchestrator", "status": "error"}], "results": {}, "final_summary": f"Agent execution failed: {str(e)}"}})
                 return
 
+            # Format chat history into the prompt
+            context_prefix = ""
+            if chat_history:
+                history_text = "\n\n".join([f"**{msg.get('role', 'unknown').upper()}**:\n{msg.get('content', '')}" for msg in chat_history[-3:]]) # Keep last 3 to save tokens
+                context_prefix = f"--- PREVIOUS CONVERSATION HISTORY ---\n{history_text}\n--- END HISTORY ---\n\n"
+                
+            full_request = context_prefix + user_request
+
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Decomposing task into sub-agent plan..."})
-            plan = await self._decompose_request(user_request)
-            await asyncio.sleep(1)
+            plan = await self._decompose_request(full_request)
+            await asyncio.sleep(0.5)
 
             results = {}
             execution_log = []
@@ -265,7 +285,7 @@ class OrchestratorAgent(BaseAgent):
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": f"System error: {str(e)}"})
             yield json.dumps({"type": "result", "data": {"status": "error", "message": str(e), "execution_log": [{"agent": "Orchestrator", "status": "error"}], "results": {}, "final_summary": f"System error: {str(e)}"}})
 
-    async def _run_autogen_swarm(self, user_request: str) -> Dict[str, Any]:
+    async def _run_autogen_swarm(self, user_request: str, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """Run the AutoGen GroupChat for dynamic orchestration."""
         import os
         os.environ["AUTOGEN_USE_DOCKER"] = "False"
@@ -294,7 +314,7 @@ class OrchestratorAgent(BaseAgent):
         # Initialize Agents
         user_proxy = autogen.UserProxyAgent(
             name="Executive",
-            system_message=f"An executive requesting assistance. Execute functions when suggested. User preferences: {prefs_text}. When you provide the final answer, keep your own thinking/process points very brief and focus on giving the relevant details properly.",
+            system_message=f"An executive requesting assistance. Execute functions when suggested. User preferences: {prefs_text}. When you provide the final answer, keep your own thinking/process points very brief and focus on giving the relevant details properly. CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. Avoid literal `\\n` strings.",
             human_input_mode="NEVER",
             max_consecutive_auto_reply=10,
             code_execution_config=False
@@ -302,7 +322,7 @@ class OrchestratorAgent(BaseAgent):
         
         researcher = autogen.AssistantAgent(
             name="Researcher",
-            system_message=f"You are a research agent. Use the perform_research tool to find information. If a query is location-dependent (like weather) and the user didn't specify a location, use the location from these User Preferences: {prefs_text}. When summarizing findings, keep process explanations short and focus on actual details.",
+            system_message=f"You are a research agent. Use the perform_research tool to find information. If a query is location-dependent (like weather) and the user didn't specify a location, use the location from these User Preferences: {prefs_text}. When summarizing findings, keep process explanations short and focus on actual details. CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. Avoid literal `\\n` strings.",
             llm_config=llm_config
         )
         
@@ -320,7 +340,7 @@ class OrchestratorAgent(BaseAgent):
 
         writer = autogen.AssistantAgent(
             name="Writer",
-            system_message="You are a writer agent. Use the draft_document tool to write follow-up emails, memos, or announcements ONLY IF the user explicitly asked for a document, email, or draft. If the user did not explicitly ask for a draft/email/document, you MUST NOT use the draft_document tool. In that case, output TERMINATE immediately.",
+            system_message="You are a writer agent. Use the draft_document tool to write documents, reports, outlines, emails, or memos ONLY IF the user explicitly asked for a document/draft. If the user did not explicitly ask for a draft/email/document/outline, you MUST NOT use the draft_document tool. In that case, output TERMINATE immediately. CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. Avoid literal `\\n` strings.",
             llm_config=llm_config
         )
         
@@ -350,28 +370,36 @@ class OrchestratorAgent(BaseAgent):
             draft_document,
             caller=writer,
             executor=user_proxy,
-            description="Draft a document (email/memo/announcement) based on the briefing and user request."
+            description="Draft a document (report/outline/email/memo) based on the briefing and user request."
         )
         
         # Create GroupChat
         groupchat = autogen.GroupChat(
             agents=[user_proxy, researcher, scheduler, briefer, writer],
             messages=[],
-            max_round=8
+            max_round=5
         )
         manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
+        
+        # Format chat history into the prompt (Limit to last 2 messages to prevent token limits)
+        context_prefix = ""
+        if chat_history:
+            recent_history = chat_history[-2:] if len(chat_history) > 2 else chat_history
+            history_text = "\n\n".join([f"**{msg.get('role', 'unknown').upper()}**:\n{msg.get('content', '')}" for msg in recent_history])
+            context_prefix = f"--- PREVIOUS CONVERSATION HISTORY (Last {len(recent_history)} messages) ---\n{history_text}\n--- END HISTORY ---\n\nPLEASE FULFILL THIS NEW REQUEST CONTINUING FROM THE CONTEXT ABOVE:\n\n"
+            
+        full_request = context_prefix + user_request
         
         # Initiate Chat (AutoGen a_initiate_chat supports async)
         chat_res = await user_proxy.a_initiate_chat(
             manager,
-            message=user_request,
+            message=full_request,
             summary_method="last_msg"
         )
         
-        final_summary = chat_res.summary if hasattr(chat_res, "summary") and chat_res.summary else ""
-        if not final_summary or final_summary == "AutoGen Swarm completed the request.":
-            # If AutoGen didn't generate a summary (e.g. user_proxy lacks llm_config), fallback to _compile_summary
-            final_summary = await self._compile_summary(user_request, {"chat_history": chat_res.chat_history})
+        # Always use our custom summarizer so the output is properly formatted Markdown
+        # AutoGen's last_msg often just returns the raw JSON from the final tool execution.
+        final_summary = await self._compile_summary(user_request, {"chat_history": chat_res.chat_history})
             
         # Extract the actual generated documents from the chat history so the frontend can display them
         combined_markdown = ""
@@ -416,8 +444,12 @@ class OrchestratorAgent(BaseAgent):
         prefs = self.memory.get_preferences(self.user_id)
         prefs_text = "\\n".join([f"- {k}: {v}" for k, v in prefs.items()]) if prefs else "None"
         
+        from datetime import datetime
+        current_date = datetime.now().strftime("%Y-%m-%d")
+        
         prompt = f"""
         Analyze this executive request and output a JSON plan.
+        Current Date Context: {current_date}
         
         USER PREFERENCES:
         {prefs_text}
@@ -427,7 +459,7 @@ class OrchestratorAgent(BaseAgent):
         Output ONLY valid JSON with this exact structure:
         {{
             "needs_research": true/false,
-            "research_query": "specific search query if needed. If the request is location-dependent (like weather) and lacks a location, append the user's location from preferences. If no location in preferences, use 'local area' but note it.",
+            "research_query": "specific search query if needed. Be sure to include the current year ({current_date[:4]}) if the query implies an upcoming or current event.",
             "needs_calendar": true/false,
             "needs_briefing": true/false,
             "meeting_subject": "name of meeting if applicable",
@@ -465,13 +497,16 @@ class OrchestratorAgent(BaseAgent):
         prompt = f"""
         The user asked: "{original_request}"
         
-        The agent swarm completed the following tasks:
-        {json.dumps(results, indent=2, default=str)[:3000]}
+        Here are the raw results from the agent swarm:
+        {json.dumps(results, indent=2, default=str)[:10000]}
         
-        Write a clear summary for the user. 
-        CRITICAL INSTRUCTIONS:
-        1. Keep the explanation of your process and thinking points (e.g., "The request was to...", "Research was conducted...") EXTREMELY brief, preferably just one short sentence or omit it entirely.
-        2. Focus almost entirely on the actual results and relevant details (e.g., the exact weather conditions, research facts, calendar events). Present these details properly and comprehensively.
+        Your task is to present this information back to the user in a beautifully formatted, highly professional Markdown response.
+        
+        CRITICAL RULES:
+        1. ABSOLUTELY NO JSON. Do not output any curly braces {{}}, "status": "success", or JSON-like syntax. 
+        2. BE POLISHED & PROFESSIONAL. Act as a world-class Executive Assistant. Start with a polite, brief conversational opening (e.g., "I have completed the requested task. Here are the details:"). 
+        3. FULL DETAILS. If the agents drafted a document, memo, or briefing, you MUST output the full text of those documents. Do not summarize them away. Use Markdown headers (##) to separate different documents or sections cleanly.
+        4. Do not include internal process explanations or "thinking" tags. Make the output look like a final, polished deliverable ready for an executive to read.
         """
         
         messages = self._build_messages(

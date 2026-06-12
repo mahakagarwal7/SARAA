@@ -41,7 +41,7 @@ class ResearchAgent(BaseAgent):
             url = result.get("url")
             if url:
                 try:
-                    content = await self.scraper_tool.extract_content(url, max_length=1500)
+                    content = await self.scraper_tool.extract_content(url, max_length=5000)
                 except Exception as e:
                     self.log_action(f"Scraping failed for {url}: {e}", level="WARNING")
                     content = None
@@ -74,7 +74,7 @@ class ResearchAgent(BaseAgent):
         
         # Format data for the prompt
         snippets = "\n".join([f"- {r.get('name')}: {r.get('snippet')}" for r in search_results])
-        details = "\n\n".join([f"Source: {c.get('title')}\n{c.get('content')[:500]}..." for c in scraped_content])
+        details = "\n\n".join([f"Source: {c.get('title')}\n{c.get('content')[:5000]}..." for c in scraped_content])
 
         prompt = f"""
         You are an expert research assistant. 
@@ -86,7 +86,7 @@ class ResearchAgent(BaseAgent):
         Detailed Content:
         {details}
         Task: Provide a moderately detailed summary of the findings so that the user understands the context well. Include important facts, numbers, and key insights. Structure your response with bullet points or short paragraphs for readability. 
-        CRITICAL: Do not include any introductory fluff (e.g. "Here is a summary of...", "Research was conducted..."). Start immediately with the actual facts and findings.
+        CRITICAL: Do not include any introductory fluff (e.g. "Here is a summary of...", "Research was conducted..."). Start immediately with the actual facts and findings. DO NOT output any internal thinking processes, <think> tags, or conversational filler. Avoid generating literal `\\n` strings.
         """
         
         messages = self._build_messages(

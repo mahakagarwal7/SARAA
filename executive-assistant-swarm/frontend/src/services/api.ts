@@ -31,6 +31,7 @@ export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
 export const executeSwarmStream = async (
   prompt: string,
   token: string | undefined,
+  chatHistory: {role: string, content: string}[],
   onEvent: (event: any) => void,
   signal?: AbortSignal
 ): Promise<void> => {
@@ -48,7 +49,8 @@ export const executeSwarmStream = async (
     signal,
     body: JSON.stringify({
       user_prompt: prompt,
-      use_mock_scheduler: false // Switch to True AutoGen Swarm Mode
+      use_mock_scheduler: false, // Switch to True AutoGen Swarm Mode
+      chat_history: chatHistory.map(msg => ({ role: msg.role, content: msg.content }))
     })
   });
 

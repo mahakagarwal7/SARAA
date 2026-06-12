@@ -54,7 +54,7 @@ function getAgentIcon(agentName: string) {
 function AppContent() {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<SwarmResult | null>(null);
+  const [messages, setMessages] = useState<{role: string, content: string, results?: any}[]>([]);
   const [liveLogs, setLiveLogs] = useState<{agent: string, status: string}[]>([]);
   const [isInputEmptyError, setIsInputEmptyError] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -159,7 +159,13 @@ function AppContent() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
-  const isIdle = !isLoading && !result && liveLogs.length === 0;
+  const isIdle = messages.length === 0 && !isLoading && liveLogs.length === 0;
+
+  // Auto-scroll chat to bottom
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, liveLogs]);
 
   // Auto-resize textarea
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -177,8 +183,12 @@ function AppContent() {
       return;
     }
     
+    const userMessage = { role: 'user', content: prompt };
+    const currentHistory = [...messages];
+    
+    setMessages([...currentHistory, userMessage]);
+    setPrompt('');
     setIsLoading(true);
-    setResult(null);
     setLiveLogs([]);
 
     abortControllerRef.current = new AbortController();
@@ -197,11 +207,15 @@ function AppContent() {
     }
 
     try {
-      await executeSwarmStream(prompt, token, (event) => {
+      await executeSwarmStream(userMessage.content, token, currentHistory, (event) => {
         if (event.type === 'log') {
           setLiveLogs((prev: any[]) => [...prev, { agent: event.agent, status: event.status || event.message }]);
         } else if (event.type === 'result') {
-          setResult(event.data);
+          setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: event.data.final_summary, 
+            results: event.data 
+          }]);
           setIsLoading(false);
         } else if (event.type === 'error') {
           dispatchToast(
@@ -243,7 +257,7 @@ function AppContent() {
       <Toaster toasterId={toasterId} />
       
       {/* Top Right Auth */}
-      <div className="auth-container">
+      <div className="auth-container" style={{ position: 'fixed', top: 16, right: 24, zIndex: 100 }}>
         {isAuthenticated ? (
           <Button appearance="subtle" onClick={() => instance.logoutPopup()} aria-label="Sign out">Sign Out ({accounts[0]?.name})</Button>
         ) : (
@@ -251,25 +265,84 @@ function AppContent() {
         )}
       </div>
 
-      <div className={`app-container ${isIdle ? 'state-idle' : 'state-active'}`}>
-        
-        {/* Brand Header */}
-        <div className="header-minimal">
-          <Bot24Regular className="logo-icon-minimal" />
-          <Title1 as="h1" className="brand-title">SARAA</Title1>
-        </div>
+      <div className={`app-container ${isIdle ? 'state-idle' : 'state-chat'}`}>
         
         {isIdle && (
-          <Text className="brand-subtitle">Strategic Autonomous Research & Action Agent</Text>
+          <div className="idle-hero">
+            <div className="header-minimal">
+              <Bot24Regular className="logo-icon-minimal" />
+              <Title1 as="h1" className="brand-title">SARAA</Title1>
+            </div>
+            <Text className="brand-subtitle">Strategic Autonomous Research & Action Agent</Text>
+          </div>
         )}
 
-        {/* Input Bar */}
-        <div className="input-section">
-          <div 
-            className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`}
-            ref={searchBarRef}
-            onMouseMove={handleMouseMove}
-          >
+        {/* Chat Thread */}
+        {!isIdle && (
+          <div className="chat-thread">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`message-bubble ${msg.role}`}>
+                {msg.role === 'user' ? (
+                  <div className="user-text">{msg.content}</div>
+                ) : (
+                  <div className="results-document">
+                    <div className="doc-header">
+                      <Text className="doc-meta">Status: Complete • {msg.results?.execution_log?.length || 0} steps executed</Text>
+                    </div>
+                    
+                    <div className="markdown-body">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    </div>
+
+                    {msg.results?.results?.briefing && (
+                      <div className="markdown-body briefing-section">
+                        <hr className="doc-divider" />
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.results.results.briefing.briefing_markdown}</ReactMarkdown>
+                      </div>
+                    )}
+                    {msg.results?.results?.writer?.draft_document && (
+                      <div className="markdown-body writer-section">
+                        <hr className="doc-divider" />
+                        <h2>Draft {msg.results.results.writer.document_type || "Document"}</h2>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.results.results.writer.draft_document}</ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {/* Active Loading State */}
+            {isLoading && (
+              <div className="message-bubble assistant">
+                <div className="status-card fade-in">
+                  {(() => {
+                    const latestLog = liveLogs.length > 0 ? liveLogs[liveLogs.length - 1] : { agent: 'Orchestrator', status: 'Thinking...' };
+                    const agentColor = getAgentColor(latestLog.agent);
+                    return (
+                      <div className="active-agent-container">
+                        <div className="active-agent-icon pulsing-icon" style={{ color: agentColor, borderColor: agentColor }}>
+                          {getAgentIcon(latestLog.agent)}
+                        </div>
+                        <div className="active-agent-info">
+                          <span className="active-agent-name" style={{ color: agentColor }}>
+                            {latestLog.agent} <span className="dots" style={{ color: agentColor }}><span>.</span><span>.</span><span>.</span></span>
+                          </span>
+                          <span className="active-agent-status">{latestLog.status}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+
+        {/* Input Bar Fixed to Bottom */}
+        <div className={`input-section ${isIdle ? 'input-idle' : 'input-chat'}`}>
+          <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`} ref={searchBarRef} onMouseMove={handleMouseMove}>
             <textarea 
               ref={textareaRef}
               placeholder="Deploy the swarm..."
@@ -290,7 +363,7 @@ function AppContent() {
                 appearance="transparent"
                 icon={isListening ? <MicOff24Regular /> : <Mic24Regular />}
                 onClick={toggleListen}
-                className={`mic-button ${isListening ? 'listening' : ''}`}
+                className={`action-btn mic-button ${isListening ? 'listening' : ''}`}
                 title={speechError || "Voice Dictation"}
                 aria-label="Voice Dictation"
               />
@@ -302,56 +375,6 @@ function AppContent() {
             </div>
           </div>
         </div>
-
-        {/* Active Agent Status Box */}
-        {!isIdle && !result && (
-          <div className="status-card fade-in">
-            {(() => {
-              const latestLog = liveLogs.length > 0 ? liveLogs[liveLogs.length - 1] : { agent: 'Orchestrator', status: 'Thinking...' };
-              const agentColor = getAgentColor(latestLog.agent);
-              return (
-                <div className="active-agent-container">
-                  <div className="active-agent-icon pulsing-icon" style={{ color: agentColor, borderColor: agentColor }}>
-                    {getAgentIcon(latestLog.agent)}
-                  </div>
-                  <div className="active-agent-info">
-                    <span className="active-agent-name" style={{ color: agentColor }}>
-                      {latestLog.agent} <span className="dots" style={{ color: agentColor }}><span>.</span><span>.</span><span>.</span></span>
-                    </span>
-                    <span className="active-agent-status">{latestLog.status}</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Final Results (Notion Style) */}
-        {result && (
-          <div className="results-document doc-entrance">
-            <div className="doc-header">
-              <Text className="doc-meta">Status: Complete • {result.execution_log.length} steps executed</Text>
-            </div>
-            
-            <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.final_summary}</ReactMarkdown>
-            </div>
-
-            {result.results?.briefing && (
-              <div className="markdown-body briefing-section">
-                <hr className="doc-divider" />
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.results.briefing.briefing_markdown}</ReactMarkdown>
-              </div>
-            )}
-            {result.results?.writer && result.results.writer.draft_document && (
-              <div className="markdown-body writer-section">
-                <hr className="doc-divider" />
-                <h2>Draft {result.results.writer.document_type || "Document"}</h2>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.results.writer.draft_document}</ReactMarkdown>
-              </div>
-            )}
-          </div>
-        )}
 
       </div>
     </>

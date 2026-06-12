@@ -78,6 +78,7 @@ class BriefingAgent(BaseAgent):
         - Only use the exact facts provided in the RESEARCH FINDINGS and CALENDAR CONTEXT.
         - Be highly detailed but strictly relevant to the point.
         - Be highly detailed, comprehensive, and strictly relevant. Do not leave out important context.
+        - CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. ONLY output the exact markdown sections requested. Avoid generating literal `\\n` strings that break formatting.
         """
         
         messages = self._build_messages(
@@ -93,7 +94,7 @@ class BriefingAgent(BaseAgent):
         Based on this briefing for '{subject}', create a 5-slide PowerPoint presentation outline.
         
         BRIEFING:
-        {briefing_md[:1000]}...
+        {briefing_md}
         
         FORMAT:
         Slide 1: Title Slide (Title, Subtitle)
@@ -103,6 +104,7 @@ class BriefingAgent(BaseAgent):
         Slide 5: Next Steps & Action Items
         
         For each slide, provide the Title and 3-4 concise bullet points.
+        CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. ONLY output the raw slide content. Avoid generating literal `\\n` strings that break formatting.
         """
         
         messages = self._build_messages(

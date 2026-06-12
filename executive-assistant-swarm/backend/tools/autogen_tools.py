@@ -13,7 +13,7 @@ async def check_calendar() -> Dict[str, Any]:
     agent = SchedulerAgent()
     return await agent.execute({"action": "check_calendar"})
 
-async def generate_briefing(meeting_subject: str, research_synthesis: str, calendar_context: str) -> Dict[str, Any]:
+async def generate_briefing(meeting_subject: str, research_synthesis: str, calendar_context: str = "No calendar context provided.") -> Dict[str, Any]:
     """Generate a briefing document and presentation outline based on research and calendar data."""
     from agents.briefing_agent import BriefingAgent
     agent = BriefingAgent()
@@ -24,7 +24,7 @@ async def generate_briefing(meeting_subject: str, research_synthesis: str, calen
     })
 
 async def draft_document(briefing_markdown: str, user_request: str, document_type: str = "document") -> Dict[str, Any]:
-    """Draft a follow-up email, memo, or announcement based on the briefing."""
+    """Draft a document, report, email, memo, or outline based on the briefing."""
     from agents.writer_agent import WriterAgent
     agent = WriterAgent()
     return await agent.execute({

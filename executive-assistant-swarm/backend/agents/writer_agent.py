@@ -47,10 +47,12 @@ class WriterAgent(BaseAgent):
         - Ensure the tone is appropriate for a professional {document_type}.
         - Do not hallucinate any information; strictly use the facts from the briefing.
         - Make it well-structured, clear, and ready to send/publish.
+        - CRITICAL: Unless the {document_type} is explicitly an "email" or "letter", DO NOT add email formatting like "Subject:", "Dear [Recipient]", "Best regards", etc. Format it correctly as a {document_type}.
+        - CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler. ONLY output the raw document text. Avoid generating literal `\\n` strings that break formatting.
         """
         
         messages = self._build_messages(
-            system_prompt="You are an expert professional document drafter. You create clear, impactful, and fact-based emails, memos, and announcements.",
+            system_prompt="You are an expert professional document drafter. You create clear, impactful, and fact-based documents, reports, and outlines. You rigorously respect the requested document format.",
             user_message=prompt
         )
         

@@ -21,6 +21,11 @@ class PDFExporter:
         # Convert Markdown to HTML
         html_text = markdown(markdown_text)
         
+        # Replace common unicode characters since FPDF default fonts only support Latin-1
+        html_text = html_text.replace('\u2019', "'").replace('\u2018', "'")
+        html_text = html_text.replace('\u201c', '"').replace('\u201d', '"')
+        html_text = html_text.replace('\u2013', '-').replace('\u2014', '--')
+        
         # Initialize PDF
         pdf = PDF()
         pdf.add_page()

@@ -52,7 +52,7 @@ class BaseAgent(ABC):
             response = self.client.complete(
                 messages=messages,
                 temperature=temperature,
-                max_tokens=2000
+                max_tokens=4096
             )
             return response.choices[0].message.content
         except Exception as e:

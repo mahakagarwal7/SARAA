@@ -54,7 +54,7 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   width: 100%;
   padding: 0 24px;
@@ -71,17 +71,28 @@ body {
   text-rendering: optimizeLegibility !important;
 }
 
-/* Idle State: Centered */
+/* Idle State: Centered Vertically */
 .app-container.state-idle {
   justify-content: center;
   align-items: center;
+  height: 100vh;
 }
 
-/* Active State: Pushed to top */
-.app-container.state-active {
+/* Chat State: Scrolling with bottom padding */
+.app-container.state-chat {
   justify-content: flex-start;
   align-items: center;
-  padding-top: 15vh;
+  padding-top: 60px;
+  padding-bottom: 150px; /* Room for fixed search bar */
+  min-height: 100vh;
+}
+
+.idle-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
 }
 
 /* Brand Header */
@@ -183,25 +194,33 @@ body {
 /* Input Section (The Command Palette) */
 .input-section {
   width: 100%;
-  max-width: 720px;
+  max-width: 960px;
   position: relative;
   z-index: 50;
-  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.input-section.input-chat {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 48px);
 }
 
 .search-bar {
   display: flex;
-  background: rgba(10, 10, 10, 0.6); /* Darker backing for legibility */
-  border: 1px solid rgba(255, 255, 255, 0.15); /* Stronger border */
-  border-radius: 24px;
-  padding: 8px 16px;
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9), 0 0 40px rgba(250, 204, 21, 0.05);
-  transition: all 0.3s ease;
+  background: rgba(25, 25, 25, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 32px;
+  padding: 12px 24px;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.8), inset 0 2px 4px rgba(255, 255, 255, 0.05);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   align-items: flex-end;
   transform-style: preserve-3d;
-  animation: levitate 5s ease-in-out infinite;
+  animation: levitate 6s ease-in-out infinite;
   
   /* Magnetic Cursor Glow Effect Setup */
   overflow: hidden;
@@ -236,9 +255,10 @@ body {
 }
 
 .search-bar:focus-within {
-  border-color: rgba(250, 204, 21, 0.5); /* Nano Banana glow on focus */
-  background: rgba(20, 20, 20, 0.7);
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(250, 204, 21, 0.15);
+  border-color: rgba(250, 204, 21, 0.5);
+  background: rgba(30, 30, 30, 0.95);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.95), 0 0 25px rgba(250, 204, 21, 0.15);
+  transform: translateY(-4px);
 }
 
 .search-textarea {
@@ -247,19 +267,19 @@ body {
   color: #FFFFFF !important;
   border: none !important;
   font-family: 'Outfit', sans-serif !important;
-  font-size: 1.2rem !important;
+  font-size: 1.25rem !important;
   font-weight: 500 !important;
   resize: none;
-  padding: 12px 0;
+  padding: 10px 0;
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.6;
   outline: none !important;
   box-shadow: none !important;
   max-height: 200px;
 }
 
 .search-textarea::placeholder {
-  color: #A1A1AA; /* Brighter placeholder */
+  color: rgba(255, 255, 255, 0.4);
   font-weight: 400 !important;
 }
 
@@ -267,20 +287,29 @@ body {
   display: flex;
   align-items: center;
   padding-bottom: 6px;
-  padding-left: 12px;
+  padding-left: 16px;
+  gap: 8px;
 }
 
 .action-btn {
   border-radius: 50% !important;
   width: 40px !important;
   height: 40px !important;
-  color: var(--text-primary) !important;
-  transition: all 0.3s ease !important;
+  min-width: 40px !important; /* Forces circle against Fluent UI defaults */
+  padding: 0 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .action-btn:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
   color: var(--accent-color) !important;
-  transform: scale(1.1);
+  transform: scale(1.05);
 }
 
 .mic-button {
@@ -318,8 +347,7 @@ body {
 /* Active Agent Status Box */
 .status-card {
   width: 100%;
-  max-width: 720px;
-  margin-top: 40px;
+  margin-top: 8px;
   background: rgba(10, 10, 10, 0.75);
   backdrop-filter: blur(30px);
   -webkit-backdrop-filter: blur(30px);
@@ -433,14 +461,47 @@ body {
   }
 }
 
+/* Chat Thread */
+.chat-thread {
+  width: 100%;
+  max-width: 1000px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin-top: 20px;
+}
+
+.message-bubble {
+  display: flex;
+  width: 100%;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.message-bubble.user {
+  justify-content: flex-end;
+}
+
+.message-bubble.assistant {
+  justify-content: flex-start;
+  flex-direction: column;
+}
+
+.user-text {
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  padding: 16px 24px;
+  border-radius: 24px;
+  border-bottom-right-radius: 4px;
+  font-size: 1.2rem;
+  max-width: 80%;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
 /* Results Document (Notion Style) */
 .results-document {
   width: 100%;
-  max-width: 720px;
-  margin-top: 40px;
-  padding-bottom: 100px;
-  perspective: 1500px;
-}
+  margin-top: 8px;
 
 .doc-entrance {
   opacity: 0;
