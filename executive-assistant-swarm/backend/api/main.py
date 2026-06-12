@@ -73,6 +73,7 @@ else:
 
 class SwarmRequest(BaseModel):
     user_prompt: str
+    image_base64: Optional[str] = None
     use_mock_scheduler: bool = False  # Use real scheduler by default
     chat_history: List[Dict[str, Any]] = []
 
@@ -133,7 +134,11 @@ async def execute_swarm(
         )
         
         # Execute the swarm (this is async and might take 10-30 seconds)
-        result = await orchestrator.execute(request.user_prompt, chat_history=request.chat_history)
+        result = await orchestrator.execute(
+            request.user_prompt, 
+            image_base64=request.image_base64, 
+            chat_history=request.chat_history
+        )
         
         return SwarmResponse(
             status=result["status"],
@@ -170,7 +175,11 @@ async def execute_swarm_stream(
             user_id=user_id
         )
         try:
-            async for chunk in orchestrator.execute_stream(request.user_prompt, chat_history=request.chat_history):
+            async for chunk in orchestrator.execute_stream(
+                request.user_prompt, 
+                image_base64=request.image_base64, 
+                chat_history=request.chat_history
+            ):
                 # Yield in SSE format: data: {...}\n\n
                 yield f"data: {chunk}\n\n"
         except Exception as e:

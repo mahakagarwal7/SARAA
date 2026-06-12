@@ -48,9 +48,14 @@ class OrchestratorAgent(BaseAgent):
             self.scheduler_agent = SchedulerAgent(access_token=access_token)
             self.log_action("✅ Orchestrator initialized with REAL Graph Scheduler")
 
-    async def execute(self, user_request: str, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+    async def execute(self, user_request: str, image_base64: str = None, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """Main entry point for the swarm."""
         self.log_action(f"Received user request: '{user_request}'")
+        
+        if image_base64:
+            self.log_action("Analyzing attached image...")
+            image_description = await self._analyze_image(image_base64, user_request)
+            user_request = f"{user_request}\n\n[ATTACHED IMAGE DESCRIPTION: {image_description}]"
         
         if not self.use_mock_scheduler:
             self.log_action("Running True AutoGen Swarm (Production Mode)...")
@@ -124,11 +129,16 @@ class OrchestratorAgent(BaseAgent):
             "final_summary": final_summary
         }
 
-    async def execute_stream(self, user_request: str, chat_history: List[Dict[str, str]] = None):
+    async def execute_stream(self, user_request: str, image_base64: str = None, chat_history: List[Dict[str, str]] = None):
         """Async generator that yields SSE JSON strings."""
         try:
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Received user request..."})
             await asyncio.sleep(0.1)
+            
+            if image_base64:
+                yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Analyzing attached image..."})
+                image_description = await self._analyze_image(image_base64, user_request)
+                user_request = f"{user_request}\n\n[ATTACHED IMAGE DESCRIPTION: {image_description}]"
 
             if not self.use_mock_scheduler:
                 yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Initializing AutoGen Swarm..."})
@@ -437,6 +447,22 @@ class OrchestratorAgent(BaseAgent):
             "results": results,
             "final_summary": final_summary
         }
+
+    async def _analyze_image(self, image_base64: str, prompt: str) -> str:
+        """Analyze an uploaded image using the Vision model."""
+        try:
+            from azure.ai.inference.models import SystemMessage, UserMessage, TextContentItem, ImageContentItem, ImageUrl
+            messages = [
+                SystemMessage(content="You are an expert executive assistant with advanced vision capabilities. The user has provided an image along with their request. Thoroughly describe the image, extracting any text, numbers, charts, or context that might be relevant to the user's prompt."),
+                UserMessage(content=[
+                    TextContentItem(text=f"Please analyze this image in the context of my request: {prompt}"),
+                    ImageContentItem(image_url=ImageUrl(url=f"data:image/jpeg;base64,{image_base64}"))
+                ])
+            ]
+            return self._call_llm(messages, temperature=0.2)
+        except Exception as e:
+            self.log_action(f"Image analysis failed: {e}", level="ERROR")
+            return f"[Image analysis failed: {str(e)}]"
 
     async def _decompose_request(self, user_request: str) -> Dict[str, Any]:
         """Use LLM to break down the user prompt into a structured JSON plan."""

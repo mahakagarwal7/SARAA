@@ -21,7 +21,9 @@ import {
   CalendarLtr24Regular,
   Person24Regular,
   Mic24Regular,
-  MicOff24Regular
+  MicOff24Regular,
+  Image24Regular,
+  Dismiss24Regular
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
@@ -59,6 +61,10 @@ function AppContent() {
   const [isInputEmptyError, setIsInputEmptyError] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const vantaRef = useRef<HTMLDivElement>(null);
   const searchBarRef = useRef<HTMLDivElement>(null);
@@ -126,6 +132,33 @@ function AppContent() {
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        dispatchToast(
+          <Toast><ToastTitle>File Too Large</ToastTitle><ToastBody>Please select an image under 5MB.</ToastBody></Toast>,
+          { intent: "error" }
+        );
+        return;
+      }
+      setImageFile(file);
+      const url = URL.createObjectURL(file);
+      setImagePreviewUrl(url);
+    }
+  };
+
+  const removeImage = () => {
+    setImageFile(null);
+    if (imagePreviewUrl) {
+      URL.revokeObjectURL(imagePreviewUrl);
+      setImagePreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   useEffect(() => {
     let vantaEffect: any;
     if (vantaRef.current) {
@@ -177,17 +210,35 @@ function AppContent() {
   }, [prompt]);
 
   const handleExecute = async () => {
-    if (!prompt.trim()) {
+    if (!prompt.trim() && !imageFile) {
       setIsInputEmptyError(true);
       setTimeout(() => setIsInputEmptyError(false), 600);
       return;
     }
     
-    const userMessage = { role: 'user', content: prompt };
+    let base64Image: string | undefined = undefined;
+    if (imageFile) {
+      base64Image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = reader.result as string;
+          resolve(base64String.split(',')[1]); // Strip data URI prefix
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(imageFile);
+      });
+    }
+
+    const userMessage = { role: 'user', content: prompt || "Analyze this image." };
+    if (imageFile) {
+      userMessage.content += `\n\n[Attached Image: ${imageFile.name}]`;
+    }
+
     const currentHistory = [...messages];
     
     setMessages([...currentHistory, userMessage]);
     setPrompt('');
+    removeImage(); // Clear preview after sending
     setIsLoading(true);
     setLiveLogs([]);
 
@@ -224,7 +275,7 @@ function AppContent() {
           );
           setIsLoading(false);
         }
-      }, abortControllerRef.current.signal);
+      }, abortControllerRef.current.signal, base64Image);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         dispatchToast(
@@ -293,20 +344,6 @@ function AppContent() {
                     <div className="markdown-body">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                     </div>
-
-                    {msg.results?.results?.briefing && (
-                      <div className="markdown-body briefing-section">
-                        <hr className="doc-divider" />
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.results.results.briefing.briefing_markdown}</ReactMarkdown>
-                      </div>
-                    )}
-                    {msg.results?.results?.writer?.draft_document && (
-                      <div className="markdown-body writer-section">
-                        <hr className="doc-divider" />
-                        <h2>Draft {msg.results.results.writer.document_type || "Document"}</h2>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.results.results.writer.draft_document}</ReactMarkdown>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -343,35 +380,65 @@ function AppContent() {
         {/* Input Bar Fixed to Bottom */}
         <div className={`input-section ${isIdle ? 'input-idle' : 'input-chat'}`}>
           <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`} ref={searchBarRef} onMouseMove={handleMouseMove}>
-            <textarea 
-              ref={textareaRef}
-              placeholder="Deploy the swarm..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              disabled={isLoading}
-              className="search-textarea"
-              rows={1}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleExecute();
-                }
-              }}
-            />
-            <div className="search-actions">
-              <Button
-                appearance="transparent"
-                icon={isListening ? <MicOff24Regular /> : <Mic24Regular />}
-                onClick={toggleListen}
-                className={`action-btn mic-button ${isListening ? 'listening' : ''}`}
-                title={speechError || "Voice Dictation"}
-                aria-label="Voice Dictation"
+            {imagePreviewUrl && (
+              <div className="image-preview-container" style={{ position: 'relative', marginBottom: 8, padding: 8, borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', display: 'inline-block', width: 'fit-content', zIndex: 10 }}>
+                <img src={imagePreviewUrl} alt="Upload preview" style={{ height: 64, width: 'auto', borderRadius: 4 }} />
+                <Button 
+                  icon={<Dismiss24Regular />} 
+                  appearance="subtle" 
+                  onClick={removeImage} 
+                  style={{ position: 'absolute', top: -8, right: -8, background: '#333', minWidth: 24, padding: 2, borderRadius: '50%' }}
+                  aria-label="Remove image"
+                />
+              </div>
+            )}
+            
+            <div className="search-input-row">
+              <textarea 
+                ref={textareaRef}
+                placeholder="Deploy the swarm..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                disabled={isLoading}
+                className="search-textarea"
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleExecute();
+                  }
+                }}
               />
-              {isLoading ? (
-                <Button appearance="subtle" icon={<Stop24Regular />} onClick={handleStop} aria-label="Stop Execution" className="action-btn stop-btn" />
-              ) : (
-                <Button appearance="subtle" icon={<Send24Regular />} onClick={handleExecute} aria-label="Execute Swarm" className="action-btn send-btn" />
-              )}
+              <div className="search-actions">
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  style={{ display: 'none' }} 
+                  accept="image/*" 
+                  onChange={handleImageUpload} 
+                />
+                <Button
+                  appearance="transparent"
+                  icon={<Image24Regular />}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="action-btn image-button"
+                  aria-label="Upload Image"
+                  title="Upload Image"
+                />
+                <Button
+                  appearance="transparent"
+                  icon={isListening ? <MicOff24Regular /> : <Mic24Regular />}
+                  onClick={toggleListen}
+                  className={`action-btn mic-button ${isListening ? 'listening' : ''}`}
+                  title={speechError || "Voice Dictation"}
+                  aria-label="Voice Dictation"
+                />
+                {isLoading ? (
+                  <Button appearance="subtle" icon={<Stop24Regular />} onClick={handleStop} aria-label="Stop Execution" className="action-btn stop-btn" />
+                ) : (
+                  <Button appearance="subtle" icon={<Send24Regular />} onClick={handleExecute} aria-label="Execute Swarm" className="action-btn send-btn" />
+                )}
+              </div>
             </div>
           </div>
         </div>

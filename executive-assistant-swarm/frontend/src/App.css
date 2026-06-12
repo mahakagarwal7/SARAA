@@ -210,6 +210,8 @@ body {
 
 .search-bar {
   display: flex;
+  flex-direction: column;
+  position: relative;
   background: rgba(25, 25, 25, 0.85);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 32px;
@@ -218,12 +220,17 @@ body {
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.8), inset 0 2px 4px rgba(255, 255, 255, 0.05);
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  align-items: flex-end;
   transform-style: preserve-3d;
   animation: levitate 6s ease-in-out infinite;
   
   /* Magnetic Cursor Glow Effect Setup */
   overflow: hidden;
+}
+
+.search-input-row {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
 }
 
 /* The actual Vercel/Claude radial glow that tracks the mouse */

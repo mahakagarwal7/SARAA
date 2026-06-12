@@ -33,7 +33,8 @@ export const executeSwarmStream = async (
   token: string | undefined,
   chatHistory: {role: string, content: string}[],
   onEvent: (event: any) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  imageBase64?: string
 ): Promise<void> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -49,6 +50,7 @@ export const executeSwarmStream = async (
     signal,
     body: JSON.stringify({
       user_prompt: prompt,
+      image_base64: imageBase64,
       use_mock_scheduler: false, // Switch to True AutoGen Swarm Mode
       chat_history: chatHistory.map(msg => ({ role: msg.role, content: msg.content }))
     })
