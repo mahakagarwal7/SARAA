@@ -305,26 +305,28 @@ function AppContent() {
 
         {/* Orchestration Pipeline (Logs) */}
         {!isIdle && !result && (
-          <div className="pipeline-container fade-in">
-            {liveLogs.map((log: any, index: number) => (
-              <div key={index} className="pipeline-step fade-in-up">
-                <div className="step-icon" style={{ color: getAgentColor(log.agent), borderColor: getAgentColor(log.agent) }}>
-                  {getAgentIcon(log.agent)}
+          <div className="pipeline-card fade-in">
+            <div className="pipeline-container">
+              {liveLogs.map((log: any, index: number) => (
+                <div key={index} className="pipeline-step fade-in-up">
+                  <div className="step-icon" style={{ color: getAgentColor(log.agent), borderColor: getAgentColor(log.agent) }}>
+                    {getAgentIcon(log.agent)}
+                  </div>
+                  <div className="step-content">
+                    <span className="step-agent" style={{ color: getAgentColor(log.agent) }}>{log.agent}</span>
+                    <span className="step-status">{log.status}</span>
+                  </div>
+                </div>
+              ))}
+              
+              <div className="pipeline-step active-step fade-in-up">
+                <div className="step-icon pulsing-icon" style={{ color: '#FACC15', borderColor: '#FACC15' }}>
+                  <Bot24Regular />
                 </div>
                 <div className="step-content">
-                  <span className="step-agent" style={{ color: getAgentColor(log.agent) }}>{log.agent}</span>
-                  <span className="step-status">{log.status}</span>
+                  <span className="step-agent" style={{ color: '#FACC15' }}>{liveLogs.length > 0 ? liveLogs[liveLogs.length - 1].agent : 'Orchestrator'} is working</span>
+                  <span className="dots"><span>.</span><span>.</span><span>.</span></span>
                 </div>
-              </div>
-            ))}
-            
-            <div className="pipeline-step active-step fade-in-up">
-              <div className="step-icon pulsing-icon" style={{ color: '#FACC15', borderColor: '#FACC15' }}>
-                <Bot24Regular />
-              </div>
-              <div className="step-content">
-                <span className="step-agent" style={{ color: '#FACC15' }}>{liveLogs.length > 0 ? liveLogs[liveLogs.length - 1].agent : 'Orchestrator'} is working</span>
-                <span className="dots"><span>.</span><span>.</span><span>.</span></span>
               </div>
             </div>
           </div>
@@ -345,6 +347,13 @@ function AppContent() {
               <div className="markdown-body briefing-section">
                 <hr className="doc-divider" />
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.results.briefing.briefing_markdown}</ReactMarkdown>
+              </div>
+            )}
+            {result.results?.writer && result.results.writer.draft_document && (
+              <div className="markdown-body writer-section">
+                <hr className="doc-divider" />
+                <h2>Draft {result.results.writer.document_type || "Document"}</h2>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{result.results.writer.draft_document}</ReactMarkdown>
               </div>
             )}
           </div>

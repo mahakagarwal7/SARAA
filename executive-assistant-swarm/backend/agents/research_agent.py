@@ -27,7 +27,7 @@ class ResearchAgent(BaseAgent):
         self.log_action(f"Starting research on: '{query}'")
         
         # 1. Search the web
-        self.log_action("Searching Bing...")
+        self.log_action("Searching Web (Tavily)...")
         search_results = await self.search_tool.search(query, count=num_results)
         
         if not search_results:
@@ -40,7 +40,16 @@ class ResearchAgent(BaseAgent):
         for result in search_results[:2]:
             url = result.get("url")
             if url:
-                content = await self.scraper_tool.extract_content(url, max_length=1500)
+                try:
+                    content = await self.scraper_tool.extract_content(url, max_length=1500)
+                except Exception as e:
+                    self.log_action(f"Scraping failed for {url}: {e}", level="WARNING")
+                    content = None
+                
+                # Fallback to Tavily's raw_content if scraping fails or is empty
+                if not content:
+                    content = result.get("raw_content") or result.get("snippet")
+                    
                 scraped_content.append({
                     "title": result.get("name"),
                     "url": url,
@@ -76,12 +85,12 @@ class ResearchAgent(BaseAgent):
         
         Detailed Content:
         {details}
-        
-        Task: Provide a concise, 3-4 bullet point executive summary of the findings. Focus on facts, numbers, and key takeaways. Do not include fluff.
+        Task: Provide a moderately detailed summary of the findings so that the user understands the context well. Include important facts, numbers, and key insights. Structure your response with bullet points or short paragraphs for readability. 
+        CRITICAL: Do not include any introductory fluff (e.g. "Here is a summary of...", "Research was conducted..."). Start immediately with the actual facts and findings.
         """
         
         messages = self._build_messages(
-            system_prompt="You are an expert research analyst. Provide clear, factual, and concise summaries.",
+            system_prompt="You are an expert research analyst. Provide highly detailed, exhaustive, clear, and factual summaries without leaving out critical information.",
             user_message=prompt
         )
         

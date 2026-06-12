@@ -54,7 +54,7 @@ class BriefingAgent(BaseAgent):
     async def _generate_briefing(self, subject: str, research: str, calendar: str) -> str:
         """Generate a structured Markdown briefing document."""
         prompt = f"""
-        Create a professional, 1-page executive briefing document for the following meeting.
+        Create a highly detailed and comprehensive professional executive briefing document for the following meeting. Do not arbitrarily limit the length to 1 page if more space is needed for thorough details.
         
         MEETING: {subject}
         
@@ -66,18 +66,18 @@ class BriefingAgent(BaseAgent):
         
         FORMAT REQUIREMENTS:
         Use Markdown. Include these exact sections:
-        1. **EXECUTIVE SUMMARY** (2-3 sentences max)
-        2. **KEY ATTENDEE BACKGROUND** (Brief context on who they are)
-        3. **RECENT DEVELOPMENTS** (3 bullet points from research)
-        4. **KEY DISCUSSION POINTS** (3-5 strategic bullet points)
-        5. **POTENTIAL QUESTIONS** (2-3 questions they might ask)
-        6. **ACTION ITEMS** (3 next steps)
+        1. **EXECUTIVE SUMMARY** (Comprehensive overview of the topic)
+        2. **KEY ATTENDEE BACKGROUND** (Detailed context on who they are and their stakes)
+        3. **DETAILED DEVELOPMENTS & FINDINGS** (Exhaustive details, statistics, and facts from the research)
+        4. **IN-DEPTH DISCUSSION POINTS** (Extensive strategic points and deep analysis)
+        5. **CRITICAL QUESTIONS** (All relevant strategic questions to consider)
+        6. **ACTION ITEMS** (Concrete and extensive next steps)
         
         STRICT INSTRUCTIONS:
         - Do NOT hallucinate, guess, or make assumptions.
         - Only use the exact facts provided in the RESEARCH FINDINGS and CALENDAR CONTEXT.
         - Be highly detailed but strictly relevant to the point.
-        - Be concise, professional, and action-oriented. No fluff.
+        - Be highly detailed, comprehensive, and strictly relevant. Do not leave out important context.
         """
         
         messages = self._build_messages(

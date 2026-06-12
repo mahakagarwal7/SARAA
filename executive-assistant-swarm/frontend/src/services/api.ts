@@ -61,22 +61,30 @@ export const executeSwarmStream = async (
 
   if (!reader) return;
 
+  let buffer = '';
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
+    buffer += decoder.decode(value, { stream: true });
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const dataStr = line.replace('data: ', '').trim();
-        if (dataStr) {
-          try {
-            const parsedData = JSON.parse(dataStr);
-            onEvent(parsedData);
-          } catch (e) {
-            console.error("Failed to parse SSE JSON:", dataStr, e);
+    let eventEndIndex;
+    while ((eventEndIndex = buffer.indexOf('\n\n')) >= 0) {
+      const eventStr = buffer.slice(0, eventEndIndex);
+      buffer = buffer.slice(eventEndIndex + 2);
+
+      const lines = eventStr.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6).trim();
+          if (dataStr) {
+            try {
+              const parsedData = JSON.parse(dataStr);
+              onEvent(parsedData);
+            } catch (e) {
+              console.error("Failed to parse SSE JSON:", dataStr, e);
+            }
           }
         }
       }

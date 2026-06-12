@@ -32,6 +32,7 @@ class TavilySearchTool:
             "query": query,
             "search_depth": "basic",
             "max_results": min(count, 10),  # Limit to 10 for basic requests
+            "include_raw_content": True,
             "include_answer": False
         }
         
@@ -52,7 +53,8 @@ class TavilySearchTool:
                             results.append({
                                 "name": r.get("title", ""),
                                 "url": r.get("url", ""),
-                                "snippet": r.get("content", "")
+                                "snippet": r.get("content", ""),
+                                "raw_content": r.get("raw_content", "")
                             })
                             
                         logger.info(f"Tavily search returned {len(results)} results for: {query}")

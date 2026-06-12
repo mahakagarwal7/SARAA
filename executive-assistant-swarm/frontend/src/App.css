@@ -97,16 +97,24 @@ body {
 
 .state-idle .header-minimal {
   flex-direction: column; /* Stack like ChatGPT */
-  margin-bottom: 32px;
+  margin-bottom: 12px;
   gap: 0px;
 }
 
 .logo-icon-minimal {
-  color: var(--text-primary);
+  color: #FFFFFF;
   width: 28px;
   height: 28px;
   transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  filter: drop-shadow(0 0 10px rgba(255,255,255,0.3));
+  /* Enhanced: Multi-layered glowing aura */
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 24px rgba(250, 204, 21, 0.3));
+  /* Enhanced: Subtle levitation */
+  animation: levitate-icon 6s ease-in-out infinite;
+}
+
+@keyframes levitate-icon {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
 .state-idle .logo-icon-minimal {
@@ -124,36 +132,39 @@ body {
 
 .brand-title {
   letter-spacing: -0.06em !important;
-  font-weight: 500 !important; /* Sleeker, lighter weight */
-  font-size: 1.8rem !important; /* Active state size */
+  font-weight: 700 !important; /* Bolder */
+  font-size: 2.2rem !important; /* Active state size */
   line-height: 1.2 !important;
   margin: 0;
   padding: 0 10px; /* Prevent horizontal clipping */
   color: #FFFFFF;
-  text-shadow: 0 0 30px rgba(255, 255, 255, 0.5), 0 4px 10px rgba(0, 0, 0, 0.8); /* Ethereal glow + dark separation */
+  text-shadow: 0 0 50px rgba(255, 255, 255, 0.9), 0 4px 10px rgba(0, 0, 0, 0.9); /* Brighter ethereal glow */
   transition: font-size 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .state-idle .brand-title {
-  font-size: 6rem !important; /* Even larger, but thinner */
-  font-weight: 600 !important;
+  font-size: 8rem !important; /* Much larger */
+  font-weight: 800 !important; /* Extra bold */
   line-height: 1.1 !important;
-  padding-bottom: 16px; /* Extra padding to prevent bottom clip from line-height */
+  padding-bottom: 8px; /* Reduced from 16px */
 }
 
 .brand-subtitle {
-  color: #E4E4E7; /* Brighter silver */
-  font-weight: 500; /* Bolder */
+  color: #FFFFFF; /* Bright white instead of silver for more contrast */
+  font-weight: 800; /* Extra bold */
   font-size: 1rem; /* Slightly larger */
   letter-spacing: 0.3em; /* Keep the premium wide tracking */
-  margin-bottom: 40px;
+  margin-bottom: 24px;
   text-align: center;
   text-transform: uppercase;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.9), 0 0 10px rgba(255, 255, 255, 0.3); /* Stronger shadow + slight glow */
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  backdrop-filter: none;
+  background: rgba(10, 10, 10, 0.6);
+  padding: 10px 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: inline-block;
 }
 
 /* Input Section (The Command Palette) */
@@ -292,10 +303,20 @@ body {
 }
 
 /* Orchestration Pipeline */
-.pipeline-container {
+.pipeline-card {
   width: 100%;
   max-width: 720px;
   margin-top: 40px;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 32px 40px 8px 40px;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9);
+}
+
+.pipeline-container {
   display: flex;
   flex-direction: column;
   padding-left: 16px;
@@ -460,7 +481,7 @@ body {
   line-height: 1.8;
   font-size: 1.1rem;
   /* Deep Acrylic Glassmorphism */
-  background: rgba(10, 10, 10, 0.5); 
+  background: rgba(10, 10, 10, 0.75); 
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.08); /* Translucent iridescent border */
