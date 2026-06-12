@@ -57,9 +57,6 @@ class BaseAgent(ABC):
             return response.choices[0].message.content
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
-            if "getaddrinfo failed" in str(e) or "your-resource" in str(e):
-                logger.warning("Dummy Azure endpoint detected. Returning mock LLM response.")
-                return "Mock LLM Response: Based on the search results, here is a synthesized summary. (Note: Configure AZURE_OPENAI_ENDPOINT for real results)"
             raise
     
     def log_action(self, action: str, level: str = "INFO"):

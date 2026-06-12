@@ -74,6 +74,8 @@ else:
 class SwarmRequest(BaseModel):
     user_prompt: str
     image_base64: Optional[str] = None
+    file_name: Optional[str] = None
+    file_base64: Optional[str] = None
     use_mock_scheduler: bool = False  # Use real scheduler by default
     chat_history: List[Dict[str, Any]] = []
 
@@ -137,6 +139,8 @@ async def execute_swarm(
         result = await orchestrator.execute(
             request.user_prompt, 
             image_base64=request.image_base64, 
+            file_name=request.file_name,
+            file_base64=request.file_base64,
             chat_history=request.chat_history
         )
         
@@ -178,6 +182,8 @@ async def execute_swarm_stream(
             async for chunk in orchestrator.execute_stream(
                 request.user_prompt, 
                 image_base64=request.image_base64, 
+                file_name=request.file_name,
+                file_base64=request.file_base64,
                 chat_history=request.chat_history
             ):
                 # Yield in SSE format: data: {...}\n\n

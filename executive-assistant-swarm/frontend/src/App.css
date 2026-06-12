@@ -509,6 +509,7 @@ body {
 .results-document {
   width: 100%;
   margin-top: 8px;
+}
 
 .doc-entrance {
   opacity: 0;
@@ -543,6 +544,25 @@ body {
   display: inline-block;
   border: 1px solid rgba(255, 255, 255, 0.25) !important;
   box-shadow: 0 10px 24px rgba(0,0,0,0.9) !important;
+}
+
+.print-btn {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  padding: 8px 16px !important;
+  border-radius: 12px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.print-btn:hover {
+  background: rgba(59, 130, 246, 0.4) !important;
+  border-color: rgba(59, 130, 246, 0.8) !important;
+  color: #ffffff !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3) !important;
 }
 
 .doc-divider {
@@ -707,4 +727,84 @@ body {
 @keyframes typingDot {
   0%, 80%, 100% { transform: scale(0); opacity: 0; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* =========================================
+   Print Styles for PDF Export
+   ========================================= */
+@media print {
+  /* Hide UI elements */
+  .vanta-bg-container,
+  .input-section,
+  .auth-container,
+  .idle-hero,
+  .print-btn,
+  .message-bubble.user,
+  .doc-meta {
+    display: none !important;
+  }
+
+  /* Reset layout for printing */
+  body, html {
+    background: white !important;
+    color: black !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .app-container {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .chat-thread {
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Style the document cleanly */
+  .message-bubble.assistant {
+    background: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .results-document {
+    background: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .markdown-body {
+    color: black !important;
+  }
+
+  .markdown-body h1, 
+  .markdown-body h2, 
+  .markdown-body h3 {
+    color: black !important;
+    border-bottom: 1px solid #ccc !important;
+  }
+
+  .markdown-body table th {
+    background-color: #f2f2f2 !important;
+    color: black !important;
+    border: 1px solid #ddd !important;
+  }
+
+  .markdown-body table td {
+    border: 1px solid #ddd !important;
+  }
+
+  /* Force background colors to print if user browser allows it */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }

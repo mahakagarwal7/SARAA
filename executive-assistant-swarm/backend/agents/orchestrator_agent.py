@@ -8,6 +8,9 @@ from .briefing_agent import BriefingAgent
 from .writer_agent import WriterAgent
 from utils.memory_db import MemoryDB
 
+# Global in-memory cache for document context
+DOCUMENT_CACHE: Dict[str, str] = {}
+
 # We will import the real one later, but use a mock for now if needed
 # from .scheduler_agent import SchedulerAgent 
 
@@ -48,7 +51,7 @@ class OrchestratorAgent(BaseAgent):
             self.scheduler_agent = SchedulerAgent(access_token=access_token)
             self.log_action("✅ Orchestrator initialized with REAL Graph Scheduler")
 
-    async def execute(self, user_request: str, image_base64: str = None, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+    async def execute(self, user_request: str, image_base64: str = None, file_name: str = None, file_base64: str = None, chat_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
         """Main entry point for the swarm."""
         self.log_action(f"Received user request: '{user_request}'")
         
@@ -56,6 +59,11 @@ class OrchestratorAgent(BaseAgent):
             self.log_action("Analyzing attached image...")
             image_description = await self._analyze_image(image_base64, user_request)
             user_request = f"{user_request}\n\n[ATTACHED IMAGE DESCRIPTION: {image_description}]"
+            
+        if file_base64 and file_name:
+            self.log_action(f"Extracting text from attached document: {file_name}...")
+            file_text = await self._extract_text_from_file(file_base64, file_name)
+            user_request = f"{user_request}\n\n[ATTACHED DOCUMENT '{file_name}' CONTENTS:\n{file_text}]"
         
         if not self.use_mock_scheduler:
             self.log_action("Running True AutoGen Swarm (Production Mode)...")
@@ -129,7 +137,7 @@ class OrchestratorAgent(BaseAgent):
             "final_summary": final_summary
         }
 
-    async def execute_stream(self, user_request: str, image_base64: str = None, chat_history: List[Dict[str, str]] = None):
+    async def execute_stream(self, user_request: str, image_base64: str = None, file_name: str = None, file_base64: str = None, chat_history: List[Dict[str, str]] = None):
         """Async generator that yields SSE JSON strings."""
         try:
             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Received user request..."})
@@ -139,6 +147,16 @@ class OrchestratorAgent(BaseAgent):
                 yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Analyzing attached image..."})
                 image_description = await self._analyze_image(image_base64, user_request)
                 user_request = f"{user_request}\n\n[ATTACHED IMAGE DESCRIPTION: {image_description}]"
+
+            if file_base64 and file_name:
+                yield json.dumps({"type": "log", "agent": "Orchestrator", "status": f"Reading document {file_name}..."})
+                file_text = await self._extract_text_from_file(file_base64, file_name)
+                doc_context = f"[ATTACHED DOCUMENT '{file_name}' CONTENTS:\n{file_text}]"
+                DOCUMENT_CACHE[self.user_id] = doc_context
+                user_request = f"{user_request}\n\n{doc_context}"
+            elif self.user_id in DOCUMENT_CACHE:
+                # If there is a cached document, append it so follow-up questions have context
+                user_request = f"{user_request}\n\n[CONTEXT FROM PREVIOUSLY ATTACHED DOCUMENT:]\n{DOCUMENT_CACHE[self.user_id]}"
 
             if not self.use_mock_scheduler:
                 yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Initializing AutoGen Swarm..."})
@@ -314,7 +332,7 @@ class OrchestratorAgent(BaseAgent):
                 "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
                 "azure_deployment": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
                 "api_key": settings.AZURE_OPENAI_API_KEY,
-                "base_url": settings.AZURE_OPENAI_ENDPOINT,
+                "base_url": settings.AZURE_OPENAI_ENDPOINT.rstrip("/"),
                 "api_type": "azure",
                 "api_version": settings.AZURE_OPENAI_API_VERSION
             }],
@@ -407,9 +425,11 @@ class OrchestratorAgent(BaseAgent):
             summary_method="last_msg"
         )
         
-        # Always use our custom summarizer so the output is properly formatted Markdown
         # AutoGen's last_msg often just returns the raw JSON from the final tool execution.
-        final_summary = await self._compile_summary(user_request, {"chat_history": chat_res.chat_history})
+        # Skip the first message as it contains the full previous chat history string,
+        # which can confuse the compiler into repeating previous outputs.
+        new_messages = chat_res.chat_history[1:] if len(chat_res.chat_history) > 1 else chat_res.chat_history
+        final_summary = await self._compile_summary(user_request, {"chat_history": new_messages})
             
         # Extract the actual generated documents from the chat history so the frontend can display them
         combined_markdown = ""
@@ -447,6 +467,37 @@ class OrchestratorAgent(BaseAgent):
             "results": results,
             "final_summary": final_summary
         }
+
+    async def _extract_text_from_file(self, file_base64: str, file_name: str) -> str:
+        """Extract text from PDF or DOCX file."""
+        import base64
+        import io
+        try:
+            file_bytes = base64.b64decode(file_base64)
+            extracted_text = ""
+            
+            if file_name.lower().endswith('.pdf'):
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                for page in reader.pages:
+                    extracted_text += page.extract_text() + "\n"
+            elif file_name.lower().endswith(('.docx', '.doc')):
+                import docx
+                doc = docx.Document(io.BytesIO(file_bytes))
+                for para in doc.paragraphs:
+                    extracted_text += para.text + "\n"
+            else:
+                return f"[Unsupported file type: {file_name}]"
+                
+            # Truncate to prevent token limits and WAF payload drops
+            max_chars = 15000
+            if len(extracted_text) > max_chars:
+                extracted_text = extracted_text[:max_chars] + f"\n\n[TEXT TRUNCATED AT {max_chars} CHARACTERS]"
+                
+            return extracted_text.strip()
+        except Exception as e:
+            self.log_action(f"File extraction failed: {e}", level="ERROR")
+            return f"[File extraction failed: {str(e)}]"
 
     async def _analyze_image(self, image_base64: str, prompt: str) -> str:
         """Analyze an uploaded image using the Vision model."""

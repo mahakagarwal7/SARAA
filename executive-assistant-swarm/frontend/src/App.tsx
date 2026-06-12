@@ -22,12 +22,14 @@ import {
   Person24Regular,
   Mic24Regular,
   MicOff24Regular,
-  Image24Regular,
-  Dismiss24Regular
+  Dismiss24Regular,
+  Document24Regular,
+  Print24Regular,
+  Attach24Regular
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
-import { executeSwarmStream, type SwarmResult } from './services/api';
+import { executeSwarmStream } from './services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as THREE from 'three';
@@ -62,8 +64,8 @@ function AppContent() {
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const vantaRef = useRef<HTMLDivElement>(null);
@@ -132,27 +134,31 @@ function AppContent() {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
         dispatchToast(
-          <Toast><ToastTitle>File Too Large</ToastTitle><ToastBody>Please select an image under 5MB.</ToastBody></Toast>,
+          <Toast><ToastTitle>File Too Large</ToastTitle><ToastBody>Please select a file under 5MB.</ToastBody></Toast>,
           { intent: "error" }
         );
         return;
       }
-      setImageFile(file);
-      const url = URL.createObjectURL(file);
-      setImagePreviewUrl(url);
+      setAttachedFile(file);
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file);
+        setFilePreviewUrl(url);
+      } else {
+        setFilePreviewUrl(null); // No image preview for docs
+      }
     }
   };
 
-  const removeImage = () => {
-    setImageFile(null);
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl);
-      setImagePreviewUrl(null);
+  const removeFile = () => {
+    setAttachedFile(null);
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+      setFilePreviewUrl(null);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -210,35 +216,46 @@ function AppContent() {
   }, [prompt]);
 
   const handleExecute = async () => {
-    if (!prompt.trim() && !imageFile) {
+    if (!prompt.trim() && !attachedFile) {
       setIsInputEmptyError(true);
       setTimeout(() => setIsInputEmptyError(false), 600);
       return;
     }
     
     let base64Image: string | undefined = undefined;
-    if (imageFile) {
-      base64Image = await new Promise<string>((resolve, reject) => {
+    let base64File: string | undefined = undefined;
+    let fileName: string | undefined = undefined;
+    
+    if (attachedFile) {
+      const isImage = attachedFile.type.startsWith('image/');
+      const base64String = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
-          const base64String = reader.result as string;
-          resolve(base64String.split(',')[1]); // Strip data URI prefix
+          const b64 = reader.result as string;
+          resolve(b64.split(',')[1]); // Strip data URI prefix
         };
         reader.onerror = reject;
-        reader.readAsDataURL(imageFile);
+        reader.readAsDataURL(attachedFile);
       });
+      
+      if (isImage) {
+        base64Image = base64String;
+      } else {
+        base64File = base64String;
+        fileName = attachedFile.name;
+      }
     }
 
-    const userMessage = { role: 'user', content: prompt || "Analyze this image." };
-    if (imageFile) {
-      userMessage.content += `\n\n[Attached Image: ${imageFile.name}]`;
+    const userMessage = { role: 'user', content: prompt || "Analyze this file." };
+    if (attachedFile) {
+      userMessage.content += `\n\n[Attached File: ${attachedFile.name}]`;
     }
 
     const currentHistory = [...messages];
     
     setMessages([...currentHistory, userMessage]);
     setPrompt('');
-    removeImage(); // Clear preview after sending
+    removeFile(); // Clear preview after sending
     setIsLoading(true);
     setLiveLogs([]);
 
@@ -275,7 +292,7 @@ function AppContent() {
           );
           setIsLoading(false);
         }
-      }, abortControllerRef.current.signal, base64Image);
+      }, abortControllerRef.current.signal, base64Image, fileName, base64File);
     } catch (err: any) {
       if (err.name === 'AbortError') {
         dispatchToast(
@@ -337,8 +354,16 @@ function AppContent() {
                   <div className="user-text">{msg.content}</div>
                 ) : (
                   <div className="results-document">
-                    <div className="doc-header">
+                    <div className="doc-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text className="doc-meta">Status: Complete • {msg.results?.execution_log?.length || 0} steps executed</Text>
+                      <Button 
+                        icon={<Print24Regular />} 
+                        appearance="subtle" 
+                        className="print-btn"
+                        onClick={() => window.print()}
+                      >
+                        Export PDF
+                      </Button>
                     </div>
                     
                     <div className="markdown-body">
@@ -380,15 +405,22 @@ function AppContent() {
         {/* Input Bar Fixed to Bottom */}
         <div className={`input-section ${isIdle ? 'input-idle' : 'input-chat'}`}>
           <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`} ref={searchBarRef} onMouseMove={handleMouseMove}>
-            {imagePreviewUrl && (
-              <div className="image-preview-container" style={{ position: 'relative', marginBottom: 8, padding: 8, borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', display: 'inline-block', width: 'fit-content', zIndex: 10 }}>
-                <img src={imagePreviewUrl} alt="Upload preview" style={{ height: 64, width: 'auto', borderRadius: 4 }} />
+            {attachedFile && (
+              <div className="image-preview-container" style={{ position: 'relative', marginBottom: 8, padding: 8, borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', width: 'fit-content', gap: 8, zIndex: 10 }}>
+                {filePreviewUrl ? (
+                  <img src={filePreviewUrl} alt="Upload preview" style={{ height: 64, width: 'auto', borderRadius: 4 }} />
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: '#2d2d2d', borderRadius: 6 }}>
+                    <Document24Regular style={{ color: '#3b82f6' }} />
+                    <Text>{attachedFile.name}</Text>
+                  </div>
+                )}
                 <Button 
                   icon={<Dismiss24Regular />} 
                   appearance="subtle" 
-                  onClick={removeImage} 
-                  style={{ position: 'absolute', top: -8, right: -8, background: '#333', minWidth: 24, padding: 2, borderRadius: '50%' }}
-                  aria-label="Remove image"
+                  onClick={removeFile} 
+                  style={{ background: '#333', minWidth: 24, padding: 2, borderRadius: '50%' }}
+                  aria-label="Remove file"
                 />
               </div>
             )}
@@ -414,16 +446,16 @@ function AppContent() {
                   type="file" 
                   ref={fileInputRef} 
                   style={{ display: 'none' }} 
-                  accept="image/*" 
-                  onChange={handleImageUpload} 
+                  accept="image/*,.pdf,.doc,.docx" 
+                  onChange={handleFileUpload} 
                 />
                 <Button
                   appearance="transparent"
-                  icon={<Image24Regular />}
+                  icon={<Attach24Regular />}
                   onClick={() => fileInputRef.current?.click()}
-                  className="action-btn image-button"
-                  aria-label="Upload Image"
-                  title="Upload Image"
+                  className="action-btn file-button"
+                  aria-label="Upload File"
+                  title="Attach Image or Document"
                 />
                 <Button
                   appearance="transparent"
