@@ -10,7 +10,14 @@ import {
   useToastController,
   Toast,
   ToastTitle,
-  ToastBody
+  ToastBody,
+  Dialog,
+  DialogTrigger,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogActions,
+  DialogContent
 } from '@fluentui/react-components';
 import {
   Bot24Regular, 
@@ -25,7 +32,10 @@ import {
   Dismiss24Regular,
   Document24Regular,
   Print24Regular,
-  Attach24Regular
+  Attach24Regular,
+  DocumentText24Regular,
+  Image24Regular,
+  Info24Regular
 } from '@fluentui/react-icons';
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
@@ -339,9 +349,67 @@ function AppContent() {
           <div className="idle-hero">
             <div className="header-minimal">
               <Bot24Regular className="logo-icon-minimal" />
-              <Title1 as="h1" className="brand-title">SARAA</Title1>
+              <Title1 as="h1" className="brand-title">
+                <span className="brand-letter" style={{ animationDelay: '0s' }}>S</span>
+                <span className="brand-letter" style={{ animationDelay: '0.15s' }}>A</span>
+                <span className="brand-letter" style={{ animationDelay: '0.3s' }}>R</span>
+                <span className="brand-letter" style={{ animationDelay: '0.45s' }}>A</span>
+                <span className="brand-letter" style={{ animationDelay: '0.6s' }}>A</span>
+              </Title1>
             </div>
             <Text className="brand-subtitle">Strategic Autonomous Research & Action Agent</Text>
+            <div style={{ marginTop: 24, marginBottom: 24, position: 'relative', zIndex: 100, animation: 'fadeIn 1s ease forwards 0.5s', opacity: 0, pointerEvents: 'auto' }}>
+              <Dialog>
+                <DialogTrigger disableButtonEnhancement>
+                  <button className="info-pill-btn">
+                    <Info24Regular style={{ marginRight: 8 }} />
+                    <span>What can SARAA do?</span>
+                  </button>
+                </DialogTrigger>
+                <DialogSurface className="glass-dialog">
+                  <DialogBody>
+                    <DialogTitle>Capabilities Overview</DialogTitle>
+                    <DialogContent>
+                      <div className="dialog-capabilities">
+                        <div className="dialog-cap-item">
+                          <Search24Regular className="dialog-icon text-blue" />
+                          <div>
+                            <strong>Deep Research & Web Browsing:</strong> SARAA utilizes a fleet of autonomous web-scraping agents to search the live internet. It reads multiple sources simultaneously, synthesizes conflicting information, and compiles comprehensive intelligence reports. It doesn't just return links; it reads the pages for you.<br/>
+                            <span className="prompt-example"><em>Try: "Conduct a deep dive into the latest breakthroughs in solid-state EV batteries from 2024. Compare the top three leading companies, their manufacturing bottlenecks, and synthesize a timeline for commercial viability."</em></span>
+                          </div>
+                        </div>
+                        <div className="dialog-cap-item">
+                          <CalendarLtr24Regular className="dialog-icon text-orange" />
+                          <div>
+                            <strong>Calendar Sync & Meeting Prep:</strong> Securely connects via Microsoft Graph API to read your live schedule. SARAA will autonomously identify your upcoming meetings, research the attendees on the web, and generate automated briefing documents so you walk into every meeting fully prepared.<br/>
+                            <span className="prompt-example"><em>Try: "Check my calendar for tomorrow. Identify any external client meetings, research their company's recent news online, and prepare a 1-page strategic briefing for me before I join the call."</em></span>
+                          </div>
+                        </div>
+                        <div className="dialog-cap-item">
+                          <DocumentText24Regular className="dialog-icon text-green" />
+                          <div>
+                            <strong>Advanced Document Generation:</strong> SARAA goes beyond chat text. It acts as your personal analyst, drafting fully-formatted, multi-page professional executive briefings, strategic industry reports, and highly technical summaries, which it can output as downloadable documents.<br/>
+                            <span className="prompt-example"><em>Try: "Draft a comprehensive, professional executive briefing on the macroeconomic impact of AI in the finance sector. Include sections on risk management, algorithmic trading, and regulatory compliance. Format it professionally."</em></span>
+                          </div>
+                        </div>
+                        <div className="dialog-cap-item">
+                          <Image24Regular className="dialog-icon text-purple" />
+                          <div>
+                            <strong>Multimodal Document Analysis:</strong> Click the attachment icon to upload massive PDFs, raw data files, Word Documents, or complex images. SARAA's vision and parsing agents will instantly read, analyze, and extract deep insights, saving you hours of manual reading.<br/>
+                            <span className="prompt-example"><em>Try: [Upload a 50-page financial PDF] and ask "Read this entire financial report. Extract the Q3 revenue figures, summarize the CEO's forward-looking guidance, and identify the top three risk factors mentioned."</em></span>
+                          </div>
+                        </div>
+                      </div>
+                    </DialogContent>
+                    <DialogActions>
+                      <DialogTrigger disableButtonEnhancement>
+                        <Button appearance="secondary" style={{ borderRadius: 8 }}>Close</Button>
+                      </DialogTrigger>
+                    </DialogActions>
+                  </DialogBody>
+                </DialogSurface>
+              </Dialog>
+            </div>
           </div>
         )}
 
