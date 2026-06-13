@@ -962,3 +962,28 @@ body {
     print-color-adjust: exact !important;
   }
 }
+
+/* Sidebar Buttons */
+.sidebar-btn-new {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.8), rgba(217, 119, 6, 0.8)) !important;
+  color: #050505 !important;
+  border: 1px solid rgba(250, 204, 21, 0.5) !important;
+  box-shadow: 0 4px 15px rgba(250, 204, 21, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+.sidebar-btn-new:hover {
+  background: linear-gradient(135deg, rgba(250, 204, 21, 1), rgba(217, 119, 6, 1)) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(250, 204, 21, 0.4) !important;
+}
+
+.sidebar-btn-active {
+  background: rgba(250, 204, 21, 0.15) !important;
+  color: #FACC15 !important;
+  border: 1px solid rgba(250, 204, 21, 0.3) !important;
+}
+
+.sidebar-btn-active:hover {
+  background: rgba(250, 204, 21, 0.25) !important;
+}

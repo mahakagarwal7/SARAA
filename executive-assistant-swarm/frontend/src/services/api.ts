@@ -20,6 +20,63 @@ export interface SwarmResult {
   results: any;
 }
 
+export interface User {
+  id: string;
+  username: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface Thread {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: number;
+  role: string;
+  content: string;
+  execution_log?: string;
+  created_at: string;
+}
+
+export const loginUser = async (username: string, password: string): Promise<AuthResponse> => {
+  const response = await api.post('/auth/login', { username, password });
+  return response.data;
+};
+
+export const registerUser = async (username: string, password: string): Promise<AuthResponse> => {
+  const response = await api.post('/auth/register', { username, password });
+  return response.data;
+};
+
+export const getThreads = async (token: string): Promise<Thread[]> => {
+  const response = await api.get('/threads', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
+
+export const getThreadMessages = async (threadId: string, token: string): Promise<Message[]> => {
+  const response = await api.get(`/threads/${threadId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
+
+export const createThread = async (title: string, token: string): Promise<{ id: string; title: string }> => {
+  const response = await api.post('/threads', { title }, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  return response.data;
+};
+
 export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
   const response = await api.post('/execute', {
     user_prompt: prompt,
@@ -31,6 +88,7 @@ export const executeSwarm = async (prompt: string): Promise<SwarmResult> => {
 export const executeSwarmStream = async (
   prompt: string,
   token: string | undefined,
+  threadId: string | undefined,
   chatHistory: {role: string, content: string}[],
   onEvent: (event: any) => void,
   signal?: AbortSignal,
@@ -52,11 +110,12 @@ export const executeSwarmStream = async (
     signal,
     body: JSON.stringify({
       user_prompt: prompt,
+      thread_id: threadId,
       image_base64: imageBase64,
       file_name: fileName,
       file_base64: fileBase64,
+      chat_history: chatHistory.map(msg => ({ role: msg.role, content: msg.content })),
       use_mock_scheduler: false, // Switch to True AutoGen Swarm Mode
-      chat_history: chatHistory.map(msg => ({ role: msg.role, content: msg.content }))
     })
   });
 

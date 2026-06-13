@@ -17,7 +17,8 @@ import {
   DialogTitle,
   DialogBody,
   DialogActions,
-  DialogContent
+  DialogContent,
+  Input
 } from '@fluentui/react-components';
 import {
   Bot24Regular, 
@@ -35,11 +36,20 @@ import {
   Attach24Regular,
   DocumentText24Regular,
   Image24Regular,
-  Info24Regular
+  Info24Regular,
+  Chat24Regular,
+  Add24Regular,
+  Navigation24Regular
 } from '@fluentui/react-icons';
-import { useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { loginRequest } from "./authConfig";
-import { executeSwarmStream } from './services/api';
+import { 
+  executeSwarmStream,
+  loginUser,
+  registerUser,
+  getThreads,
+  getThreadMessages,
+  createThread
+} from './services/api';
+import type { User, Thread } from './services/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import * as THREE from 'three';
@@ -78,9 +88,102 @@ function AppContent() {
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [user, setUser] = useState<User | null>(() => {
+    const savedUser = localStorage.getItem('user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const vantaRef = useRef<HTMLDivElement>(null);
   const searchBarRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Fetch threads on load if logged in
+  useEffect(() => {
+    if (token) {
+      loadThreads();
+    }
+  }, [token]);
+
+  const loadThreads = async () => {
+    if (!token) return;
+    try {
+      const data = await getThreads(token);
+      setThreads(data);
+    } catch (e) {
+      console.error("Failed to load threads", e);
+    }
+  };
+
+  const handleThreadSelect = async (threadId: string) => {
+    setActiveThreadId(threadId);
+    setMessages([]);
+    if (!token) return;
+    try {
+      const msgs = await getThreadMessages(threadId, token);
+      const formattedMsgs = msgs.map(m => ({
+        role: m.role,
+        content: m.content,
+        results: m.execution_log ? { execution_log: JSON.parse(m.execution_log) } : undefined
+      }));
+      setMessages(formattedMsgs);
+    } catch (e) {
+      console.error("Failed to load thread messages", e);
+    }
+  };
+
+  const handleNewChat = () => {
+    setActiveThreadId(null);
+    setMessages([]);
+    setPrompt('');
+    removeFile();
+  };
+
+  const handleLogin = async () => {
+    setAuthError(null);
+    try {
+      const res = await loginUser(authUsername, authPassword);
+      setToken(res.access_token);
+      setUser(res.user);
+      localStorage.setItem('token', res.access_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
+      setIsAuthOpen(false);
+    } catch (e: any) {
+      setAuthError(e.response?.data?.detail || "Login failed");
+    }
+  };
+
+  const handleRegister = async () => {
+    setAuthError(null);
+    try {
+      const res = await registerUser(authUsername, authPassword);
+      setToken(res.access_token);
+      setUser(res.user);
+      localStorage.setItem('token', res.access_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
+      setIsAuthOpen(false);
+    } catch (e: any) {
+      setAuthError(e.response?.data?.detail || "Registration failed");
+    }
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setThreads([]);
+    handleNewChat();
+  };
 
   // Magnetic Cursor Tracking for the Vercel Glow
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -205,9 +308,6 @@ function AppContent() {
   const toasterId = useId("toaster");
   const { dispatchToast } = useToastController(toasterId);
 
-  const { instance, accounts } = useMsal();
-  const isAuthenticated = useIsAuthenticated();
-
   const isIdle = messages.length === 0 && !isLoading && liveLogs.length === 0;
 
   // Auto-scroll chat to bottom
@@ -271,21 +371,18 @@ function AppContent() {
 
     abortControllerRef.current = new AbortController();
 
-    let token = undefined;
-    if (isAuthenticated && accounts.length > 0) {
-      try {
-        const tokenResponse = await instance.acquireTokenSilent({
-          ...loginRequest,
-          account: accounts[0]
-        });
-        token = tokenResponse.accessToken;
-      } catch (e) {
-        console.warn("Silent token acquisition failed. Using mock mode.", e);
-      }
-    }
-
     try {
-      await executeSwarmStream(userMessage.content, token, currentHistory, (event) => {
+      let currentThreadId = activeThreadId;
+      if (!currentThreadId && token) {
+        // Create new thread
+        const newThreadTitle = userMessage.content.slice(0, 30) + "...";
+        const newThread = await createThread(newThreadTitle, token);
+        currentThreadId = newThread.id;
+        setActiveThreadId(currentThreadId);
+        loadThreads(); // Refresh thread list
+      }
+
+      await executeSwarmStream(userMessage.content, token || undefined, currentThreadId || undefined, currentHistory, (event) => {
         if (event.type === 'log') {
           setLiveLogs((prev: any[]) => [...prev, { agent: event.agent, status: event.status || event.message }]);
         } else if (event.type === 'result') {
@@ -334,16 +431,109 @@ function AppContent() {
 
       <Toaster toasterId={toasterId} />
       
+      {/* Sidebar for Threads */}
+      <div className="sidebar" style={{
+        position: 'fixed', top: 0, left: isSidebarOpen ? 0 : -260, bottom: 0, width: 260, 
+        backgroundColor: 'rgba(20,20,20,0.85)', backdropFilter: 'blur(10px)', 
+        borderRight: '1px solid rgba(255,255,255,0.1)', zIndex: 90, 
+        display: 'flex', flexDirection: 'column', padding: 16, boxSizing: 'border-box',
+        transition: 'left 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+      }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          <Button 
+            appearance="transparent" 
+            icon={<Dismiss24Regular />} 
+            onClick={() => setIsSidebarOpen(false)}
+            style={{ minWidth: 40, padding: 0 }}
+            aria-label="Close Sidebar"
+          />
+          <Button 
+            icon={<Add24Regular />} 
+            className="sidebar-btn-new"
+            onClick={handleNewChat}
+            style={{ flex: 1, justifyContent: 'flex-start', paddingLeft: 12, borderRadius: 8 }}
+          >
+            New Chat
+          </Button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {threads.map(t => (
+            <Button 
+              key={t.id} 
+              icon={<Chat24Regular />} 
+              appearance={activeThreadId === t.id ? undefined : "subtle"} 
+              className={activeThreadId === t.id ? "sidebar-btn-active" : undefined}
+              onClick={() => handleThreadSelect(t.id)}
+              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 4, paddingLeft: 12, borderRadius: 8, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {t.title}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* Open Sidebar Button (when sidebar is closed) */}
+      {!isSidebarOpen && (
+        <div style={{ position: 'fixed', top: 16, left: 16, zIndex: 100 }}>
+          <Button 
+            appearance="subtle" 
+            icon={<Navigation24Regular />} 
+            onClick={() => setIsSidebarOpen(true)}
+            aria-label="Open Sidebar"
+          />
+        </div>
+      )}
+
       {/* Top Right Auth */}
       <div className="auth-container" style={{ position: 'fixed', top: 16, right: 24, zIndex: 100 }}>
-        {isAuthenticated ? (
-          <Button appearance="subtle" onClick={() => instance.logoutPopup()} aria-label="Sign out">Sign Out ({accounts[0]?.name})</Button>
+        {user ? (
+          <Button appearance="subtle" onClick={handleLogout} aria-label="Sign out">Sign Out ({user.username})</Button>
         ) : (
-          <Button appearance="subtle" onClick={() => instance.loginPopup(loginRequest).catch(e => console.error(e))} aria-label="Sign in">Sign In</Button>
+          <Dialog open={isAuthOpen} onOpenChange={(_, data) => setIsAuthOpen(data.open)}>
+            <DialogTrigger disableButtonEnhancement>
+              <Button appearance="subtle">Sign In</Button>
+            </DialogTrigger>
+            <DialogSurface className="glass-dialog">
+              <DialogBody>
+                <DialogTitle>{authMode === 'login' ? 'Sign In' : 'Sign Up'}</DialogTitle>
+                <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+                  {authError && <Text style={{ color: '#ef4444' }}>{authError}</Text>}
+                  <Input 
+                    placeholder="Username" 
+                    value={authUsername} 
+                    onChange={e => setAuthUsername(e.target.value)} 
+                  />
+                  <Input 
+                    type="password" 
+                    placeholder="Password" 
+                    value={authPassword} 
+                    onChange={e => setAuthPassword(e.target.value)} 
+                    onKeyDown={e => e.key === 'Enter' && (authMode === 'login' ? handleLogin() : handleRegister())}
+                  />
+                  <Button 
+                    appearance="transparent" 
+                    style={{ alignSelf: 'flex-start', padding: 0 }}
+                    onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  >
+                    {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
+                  </Button>
+                </DialogContent>
+                <DialogActions style={{ marginTop: 24 }}>
+                  <DialogTrigger disableButtonEnhancement>
+                    <Button appearance="secondary">Cancel</Button>
+                  </DialogTrigger>
+                  <Button appearance="primary" onClick={authMode === 'login' ? handleLogin : handleRegister}>
+                    {authMode === 'login' ? 'Sign In' : 'Sign Up'}
+                  </Button>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
         )}
       </div>
 
-      <div className={`app-container ${isIdle ? 'state-idle' : 'state-chat'}`}>
+      <div style={{ paddingLeft: isSidebarOpen ? 260 : 0, width: '100vw', boxSizing: 'border-box', transition: 'padding-left 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+        <div className={`app-container ${isIdle ? 'state-idle' : 'state-chat'}`}>
         
         {isIdle && (
           <div className="idle-hero">
@@ -471,7 +661,7 @@ function AppContent() {
         )}
 
         {/* Input Bar Fixed to Bottom */}
-        <div className={`input-section ${isIdle ? 'input-idle' : 'input-chat'}`}>
+        <div className={`input-section ${isIdle ? 'input-idle' : 'input-chat'}`} style={!isIdle ? { left: isSidebarOpen ? 'calc(50vw + 130px)' : '50%', transition: 'left 0.3s cubic-bezier(0.16, 1, 0.3, 1)' } : {}}>
           <div className={`search-bar ${isInputEmptyError ? 'error-shake' : ''}`} ref={searchBarRef} onMouseMove={handleMouseMove}>
             {attachedFile && (
               <div className="image-preview-container" style={{ position: 'relative', marginBottom: 8, padding: 8, borderRadius: 8, background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', width: 'fit-content', gap: 8, zIndex: 10 }}>
@@ -543,6 +733,7 @@ function AppContent() {
           </div>
         </div>
 
+      </div>
       </div>
     </>
   );
