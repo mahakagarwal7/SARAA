@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import jwt
 import uuid
-from passlib.hash import bcrypt
+import bcrypt
 
 SECRET_KEY = "super_secret_key" # Replace in production
 ALGORITHM = "HS256"
@@ -128,7 +128,7 @@ async def register(req: RegisterRequest):
     if memory_db.get_user_by_username(req.username):
         raise HTTPException(status_code=400, detail="Username already registered")
     user_id = str(uuid.uuid4())
-    password_hash = bcrypt.hash(req.password)
+    password_hash = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     memory_db.create_user(user_id, req.username, password_hash)
     
     token = jwt.encode({"sub": user_id, "username": req.username}, SECRET_KEY, algorithm=ALGORITHM)
@@ -137,7 +137,7 @@ async def register(req: RegisterRequest):
 @app.post("/auth/login")
 async def login(req: LoginRequest):
     user = memory_db.get_user_by_username(req.username)
-    if not user or not bcrypt.verify(req.password, user["password_hash"]):
+    if not user or not bcrypt.checkpw(req.password.encode('utf-8'), user["password_hash"].encode('utf-8')):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
     
     token = jwt.encode({"sub": user["id"], "username": user["username"]}, SECRET_KEY, algorithm=ALGORITHM)

@@ -6,6 +6,8 @@ from .base_agent import BaseAgent
 from .research_agent import ResearchAgent
 from .briefing_agent import BriefingAgent
 from .writer_agent import WriterAgent
+from .email_agent import EmailAgent
+from .knowledge_agent import KnowledgeAgent
 from utils.memory_db import MemoryDB
 
 # Global in-memory cache for document context
@@ -40,6 +42,8 @@ class OrchestratorAgent(BaseAgent):
         self.research_agent = ResearchAgent()
         self.briefing_agent = BriefingAgent()
         self.writer_agent = WriterAgent()
+        self.email_agent = EmailAgent(access_token=access_token)
+        self.knowledge_agent = KnowledgeAgent()
         self.memory = MemoryDB()
         
         # Use Mock if Graph API isn't ready, otherwise use Real
@@ -64,6 +68,15 @@ class OrchestratorAgent(BaseAgent):
             self.log_action(f"Extracting text from attached document: {file_name}...")
             file_text = await self._extract_text_from_file(file_base64, file_name)
             user_request = f"{user_request}\n\n[ATTACHED DOCUMENT '{file_name}' CONTENTS:\n{file_text}]"
+            
+            # Index document into Knowledge Base
+            self.log_action(f"Indexing document '{file_name}' into Knowledge Base...")
+            await self.knowledge_agent.execute({
+                "action": "add_document",
+                "doc_id": file_name,
+                "text": file_text,
+                "metadata": {"user_id": self.user_id}
+            })
         
         if not self.use_mock_scheduler:
             self.log_action("Running True AutoGen Swarm (Production Mode)...")
@@ -154,6 +167,14 @@ class OrchestratorAgent(BaseAgent):
                 doc_context = f"[ATTACHED DOCUMENT '{file_name}' CONTENTS:\n{file_text}]"
                 DOCUMENT_CACHE[self.user_id] = doc_context
                 user_request = f"{user_request}\n\n{doc_context}"
+                
+                yield json.dumps({"type": "log", "agent": "KnowledgeAgent", "status": f"Indexing {file_name} into Knowledge Base..."})
+                await self.knowledge_agent.execute({
+                    "action": "add_document",
+                    "doc_id": file_name,
+                    "text": file_text,
+                    "metadata": {"user_id": self.user_id}
+                })
             elif self.user_id in DOCUMENT_CACHE:
                 # If there is a cached document, append it so follow-up questions have context
                 user_request = f"{user_request}\n\n[CONTEXT FROM PREVIOUSLY ATTACHED DOCUMENT:]\n{DOCUMENT_CACHE[self.user_id]}"
@@ -201,7 +222,7 @@ class OrchestratorAgent(BaseAgent):
                         new_loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(new_loop)
                         try:
-                            with contextlib.redirect_stdout(stream):
+                            with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
                                 return new_loop.run_until_complete(self._run_autogen_swarm(user_request, chat_history))
                         finally:
                             new_loop.close()
@@ -221,10 +242,12 @@ class OrchestratorAgent(BaseAgent):
                             yield json.dumps({"type": "log", "agent": "System", "status": "Invoking Tool Execution..."})
                         elif "TERMINATE" in line:
                             yield json.dumps({"type": "log", "agent": "Orchestrator", "status": "Swarm reached consensus. Finalizing..."})
+                        elif "🚨" in line or "ACTION REQUIRED" in line:
+                            yield json.dumps({"type": "log", "agent": "System", "status": line.strip()})
                         elif "Error" in line or "Exception" in line or "RateLimit" in line:
                             yield json.dumps({"type": "log", "agent": "System", "status": f"Warning: {line[:100]}..."})
                     except asyncio.TimeoutError:
-                        yield ": keep-alive\n\n"
+                        yield json.dumps({"type": "keep-alive"})
                         continue
                 
                 # Drain queue
@@ -320,7 +343,10 @@ class OrchestratorAgent(BaseAgent):
         
         import autogen
         from utils.config import settings
-        from tools.autogen_tools import perform_research, check_calendar, generate_briefing, draft_document
+        from tools.autogen_tools import perform_research, check_calendar, generate_briefing, draft_document, fetch_unread_emails, draft_email_reply, query_knowledge_base, set_access_token
+        
+        # Set access token for tools that require authentication
+        set_access_token(self.access_token)
         
         # Fetch user preferences
         prefs = self.memory.get_preferences(self.user_id)
@@ -332,11 +358,12 @@ class OrchestratorAgent(BaseAgent):
                 "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
                 "api_key": settings.AZURE_OPENAI_API_KEY,
                 "base_url": f"{settings.AZURE_OPENAI_ENDPOINT.rstrip('/')}/openai/deployments/{settings.AZURE_OPENAI_DEPLOYMENT_NAME}",
-                "api_type": "open_ai",
+                "api_type": "openai",
                 "default_query": {"api-version": settings.AZURE_OPENAI_API_VERSION},
                 "default_headers": {"api-key": settings.AZURE_OPENAI_API_KEY}
             }],
-            "temperature": 0.2
+            "temperature": 0.2,
+            "cache_seed": None
         }
 
         # Initialize Agents
@@ -372,6 +399,18 @@ class OrchestratorAgent(BaseAgent):
             llm_config=llm_config
         )
         
+        emailer = autogen.AssistantAgent(
+            name="Emailer",
+            system_message="You are an email agent. Use the fetch_unread_emails tool to check the inbox. Use draft_email_reply to reply to threads. CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler.",
+            llm_config=llm_config
+        )
+        
+        knowledge = autogen.AssistantAgent(
+            name="Knowledge",
+            system_message="You are a knowledge retriever. Use the query_knowledge_base tool to find information from previously saved documents. CRITICAL: DO NOT output any internal thinking processes, <think> tags, or conversational filler.",
+            llm_config=llm_config
+        )
+        
         # Register tools
         autogen.agentchat.register_function(
             perform_research,
@@ -401,11 +440,32 @@ class OrchestratorAgent(BaseAgent):
             description="Draft a document (report/outline/email/memo) based on the briefing and user request."
         )
         
+        autogen.agentchat.register_function(
+            fetch_unread_emails,
+            caller=emailer,
+            executor=user_proxy,
+            description="Fetch unread emails from the executive's Outlook Inbox."
+        )
+        
+        autogen.agentchat.register_function(
+            draft_email_reply,
+            caller=emailer,
+            executor=user_proxy,
+            description="Draft a reply to a specific email thread."
+        )
+        
+        autogen.agentchat.register_function(
+            query_knowledge_base,
+            caller=knowledge,
+            executor=user_proxy,
+            description="Query the personal knowledge base (RAG) for information from previously uploaded documents."
+        )
+        
         # Create GroupChat
         groupchat = autogen.GroupChat(
-            agents=[user_proxy, researcher, scheduler, briefer, writer],
+            agents=[user_proxy, researcher, scheduler, briefer, writer, emailer, knowledge],
             messages=[],
-            max_round=5
+            max_round=6
         )
         manager = autogen.GroupChatManager(groupchat=groupchat, llm_config=llm_config)
         

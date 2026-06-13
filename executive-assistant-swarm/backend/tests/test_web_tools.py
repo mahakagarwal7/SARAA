@@ -4,15 +4,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import asyncio
 import pytest
-from tools.web_search import BingSearchTool
+from tools.web_search import TavilySearchTool
 from tools.web_scraper import WebScraperTool
 
 @pytest.mark.asyncio
-async def test_bing_search():
-    """Test Bing search functionality"""
-    print("\n=== Testing Bing Search ===")
+async def test_tavily_search():
+    """Test Tavily search functionality"""
+    print("\n=== Testing Tavily Search ===")
     
-    tool = BingSearchTool()
+    tool = TavilySearchTool()
     
     # Test search
     results = await tool.search("Microsoft AI announcements 2024", count=3)
@@ -24,7 +24,7 @@ async def test_bing_search():
         print(f"  URL: {results[0]['url']}")
     
     assert len(results) > 0, "Search should return at least one result"
-    print("✓ Bing search test passed")
+    print("✓ Tavily search test passed")
 
 @pytest.mark.asyncio
 async def test_web_scraper():
@@ -48,7 +48,7 @@ async def test_combined_workflow():
     """Test search + scrape workflow"""
     print("\n=== Testing Combined Workflow ===")
     
-    search_tool = BingSearchTool()
+    search_tool = TavilySearchTool()
     scrape_tool = WebScraperTool()
     
     # Search
@@ -69,7 +69,7 @@ async def run_all_tests():
     print("RUNNING WEB TOOLS TESTS")
     print("="*50)
     
-    await test_bing_search()
+    await test_tavily_search()
     await test_web_scraper()
     await test_combined_workflow()
     

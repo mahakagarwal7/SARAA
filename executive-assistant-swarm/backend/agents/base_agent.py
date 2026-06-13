@@ -4,6 +4,7 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 import os
+import sys
 import logging
 from datetime import datetime
 
@@ -64,11 +65,20 @@ class BaseAgent(ABC):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] [{self.name}] {action}"
         
+        def safe_print(msg):
+            try:
+                print(msg, flush=True)
+            except UnicodeEncodeError:
+                print(msg.encode(sys.stdout.encoding, errors='replace').decode(sys.stdout.encoding), flush=True)
+
         if level == "INFO":
+            safe_print(log_message)
             logger.info(log_message)
         elif level == "ERROR":
+            safe_print(f"ERROR: {log_message}")
             logger.error(log_message)
         elif level == "DEBUG":
+            safe_print(f"DEBUG: {log_message}")
             logger.debug(log_message)
     
     def add_to_history(self, role: str, content: str):

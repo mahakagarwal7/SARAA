@@ -6,7 +6,7 @@ msal==1.26.0
 azure-monitor-opentelemetry==1.6.0
 
 # Agent Framework
-autogen-agentchat>=0.2.0
+autogen-agentchat==0.2.40
 
 # Web Tools
 aiohttp==3.9.1
@@ -37,3 +37,7 @@ markdown==3.5.2
 # Document Parsing
 pypdf==4.0.0
 python-docx==1.1.0
+
+# Knowledge Base (RAG)
+chromadb==0.4.22
+sentence-transformers==2.2.2
