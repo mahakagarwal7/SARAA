@@ -1,0 +1,103 @@
+.swarm-visualizer-container {
+  width: 100%;
+  height: 450px;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9);
+  position: relative;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.visualizer-header {
+  position: absolute;
+  top: 16px;
+  left: 24px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #FACC15;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+}
+
+.pulse-indicator {
+  width: 10px;
+  height: 10px;
+  background-color: #FACC15;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #FACC15, 0 0 20px #FACC15;
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+}
+
+.swarm-node {
+  background: rgba(20, 20, 20, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px 20px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+  backdrop-filter: blur(10px);
+}
+
+.active-node {
+  border-color: #FACC15;
+  box-shadow: 0 0 20px rgba(250, 204, 21, 0.3), inset 0 0 10px rgba(250, 204, 21, 0.1);
+  transform: translateY(-5px);
+}
+
+.node-icon {
+  font-size: 28px;
+}
+
+.node-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.node-status {
+  font-size: 0.75rem;
+  color: #FACC15;
+  text-align: center;
+  margin-top: 4px;
+  opacity: 0.9;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-node .node-label {
+  background: linear-gradient(90deg, #FACC15, #FFFFFF, #FACC15);
+  background-size: 200% auto;
+  color: #FACC15;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shine 3s linear infinite;
+}
+
+.hidden-handle {
+  opacity: 0 !important;
+}

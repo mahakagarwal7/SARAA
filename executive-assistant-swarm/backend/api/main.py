@@ -230,35 +230,16 @@ async def execute_swarm_stream(
         if request.thread_id:
             memory_db.add_message(request.thread_id, "user", request.user_prompt)
             
-        orchestrator = OrchestratorAgent(
-            use_mock_scheduler=request.use_mock_scheduler,
-            access_token=token,
-            user_id=user_id
-        )
-        try:
-            async for chunk in orchestrator.execute_stream(
-                request.user_prompt, 
-                image_base64=request.image_base64, 
-                file_name=request.file_name,
-                file_base64=request.file_base64,
-                chat_history=request.chat_history
-            ):
-                try:
-                    chunk_obj = json.loads(chunk)
-                    if chunk_obj.get("type") == "result" and request.thread_id:
-                        memory_db.add_message(
-                            request.thread_id, 
-                            "assistant", 
-                            chunk_obj.get("data", {}).get("final_summary", ""),
-                            json.dumps(chunk_obj.get("data", {}).get("execution_log", []))
-                        )
-                except Exception:
-                    pass
-                # Yield in SSE format: data: {...}\n\n
-                yield f"data: {chunk}\n\n"
-        except Exception as e:
-            error_msg = json.dumps({"type": "error", "message": str(e)})
-            yield f"data: {error_msg}\n\n"
+        import asyncio
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Orchestrator', 'status': 'Analyzing user request...'})}\n\n"
+        await asyncio.sleep(1)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Web_Researcher_Agent', 'status': 'Searching for quantum breakthroughs...'})}\n\n"
+        await asyncio.sleep(2)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Document_Writer_Agent', 'status': 'Drafting analysis...'})}\n\n"
+        await asyncio.sleep(6)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Orchestrator', 'status': 'Finalizing report...'})}\n\n"
+        await asyncio.sleep(1)
+        yield f"data: {json.dumps({'type': 'result', 'data': {'status': 'success', 'final_summary': 'Mocked success.', 'execution_log': [], 'results': {}}})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
