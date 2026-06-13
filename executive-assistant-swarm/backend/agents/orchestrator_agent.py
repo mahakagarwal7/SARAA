@@ -330,11 +330,11 @@ class OrchestratorAgent(BaseAgent):
         llm_config = {
             "config_list": [{
                 "model": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
-                "azure_deployment": settings.AZURE_OPENAI_DEPLOYMENT_NAME,
                 "api_key": settings.AZURE_OPENAI_API_KEY,
-                "base_url": settings.AZURE_OPENAI_ENDPOINT.rstrip("/"),
-                "api_type": "azure",
-                "api_version": settings.AZURE_OPENAI_API_VERSION
+                "base_url": f"{settings.AZURE_OPENAI_ENDPOINT.rstrip('/')}/openai/deployments/{settings.AZURE_OPENAI_DEPLOYMENT_NAME}",
+                "api_type": "open_ai",
+                "default_query": {"api-version": settings.AZURE_OPENAI_API_VERSION},
+                "default_headers": {"api-key": settings.AZURE_OPENAI_API_KEY}
             }],
             "temperature": 0.2
         }

@@ -56,7 +56,6 @@ import * as THREE from 'three';
 // @ts-ignore
 import NET from 'vanta/src/vanta.net';
 import './App.css';
-import { SwarmVisualizer } from './components/SwarmVisualizer';
 
 function getAgentColor(agentName: string) {
   const name = agentName.toLowerCase();
@@ -128,6 +127,7 @@ function AppContent() {
   const handleThreadSelect = async (threadId: string) => {
     setActiveThreadId(threadId);
     setMessages([]);
+    setLiveLogs([]);
     if (!token) return;
     try {
       const msgs = await getThreadMessages(threadId, token);
@@ -145,6 +145,7 @@ function AppContent() {
   const handleNewChat = () => {
     setActiveThreadId(null);
     setMessages([]);
+    setLiveLogs([]);
     setPrompt('');
     removeFile();
   };
@@ -635,8 +636,26 @@ function AppContent() {
             
             {/* Active Loading State */}
             {isLoading && (
-              <div className="message-bubble assistant" style={{ width: '100%', maxWidth: '1000px', margin: '0 auto' }}>
-                <SwarmVisualizer logs={liveLogs} />
+              <div className="message-bubble assistant">
+                <div className="status-card fade-in">
+                  {(() => {
+                    const latestLog = liveLogs.length > 0 ? liveLogs[liveLogs.length - 1] : { agent: 'Orchestrator', status: 'Thinking...' };
+                    const agentColor = getAgentColor(latestLog.agent);
+                    return (
+                      <div className="active-agent-container">
+                        <div className="active-agent-icon pulsing-icon" style={{ color: agentColor, borderColor: agentColor }}>
+                          {getAgentIcon(latestLog.agent)}
+                        </div>
+                        <div className="active-agent-info">
+                          <span className="active-agent-name" style={{ color: agentColor }}>
+                            {latestLog.agent} <span className="dots" style={{ color: agentColor }}><span>.</span><span>.</span><span>.</span></span>
+                          </span>
+                          <span className="active-agent-status">{latestLog.status}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             )}
             <div ref={messagesEndRef} />
