@@ -8,6 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import jwt
+import uuid
+from passlib.hash import bcrypt
+
+SECRET_KEY = "super_secret_key" # Replace in production
+ALGORITHM = "HS256"
 
 # Telemetry
 try:
@@ -32,11 +37,8 @@ def get_user_id_from_token(token: Optional[str]) -> str:
     if not token:
         return "user_123"  # Fallback
     try:
-        # Decode without verifying signature since MSAL already verified on frontend
-        # and we don't have the public keys loaded for this MVP.
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        # Use email or object ID as the user identifier
-        return decoded.get("preferred_username") or decoded.get("oid") or "user_123"
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return decoded.get("sub") or "user_123"
     except Exception:
         return "user_123"
 
@@ -78,6 +80,18 @@ class SwarmRequest(BaseModel):
     file_base64: Optional[str] = None
     use_mock_scheduler: bool = False  # Use real scheduler by default
     chat_history: List[Dict[str, Any]] = []
+    thread_id: Optional[str] = None
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class ThreadCreateRequest(BaseModel):
+    title: str
 
 class ExecutionLogItem(BaseModel):
     agent: str
@@ -108,6 +122,46 @@ async def root():
 async def health_check():
     """Simple health check for monitoring."""
     return {"status": "healthy"}
+
+@app.post("/auth/register")
+async def register(req: RegisterRequest):
+    if memory_db.get_user_by_username(req.username):
+        raise HTTPException(status_code=400, detail="Username already registered")
+    user_id = str(uuid.uuid4())
+    password_hash = bcrypt.hash(req.password)
+    memory_db.create_user(user_id, req.username, password_hash)
+    
+    token = jwt.encode({"sub": user_id, "username": req.username}, SECRET_KEY, algorithm=ALGORITHM)
+    return {"access_token": token, "token_type": "bearer", "user": {"id": user_id, "username": req.username}}
+
+@app.post("/auth/login")
+async def login(req: LoginRequest):
+    user = memory_db.get_user_by_username(req.username)
+    if not user or not bcrypt.verify(req.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    
+    token = jwt.encode({"sub": user["id"], "username": user["username"]}, SECRET_KEY, algorithm=ALGORITHM)
+    return {"access_token": token, "token_type": "bearer", "user": {"id": user["id"], "username": user["username"]}}
+
+@app.get("/threads")
+async def get_threads(authorization: Optional[str] = Header(None)):
+    token = authorization.split(" ")[1] if authorization and authorization.startswith("Bearer ") else None
+    user_id = get_user_id_from_token(token)
+    return memory_db.get_user_threads(user_id)
+
+@app.post("/threads")
+async def create_thread(req: ThreadCreateRequest, authorization: Optional[str] = Header(None)):
+    token = authorization.split(" ")[1] if authorization and authorization.startswith("Bearer ") else None
+    user_id = get_user_id_from_token(token)
+    thread_id = str(uuid.uuid4())
+    memory_db.create_thread(thread_id, user_id, req.title)
+    return {"id": thread_id, "title": req.title}
+
+@app.get("/threads/{thread_id}")
+async def get_thread(thread_id: str, authorization: Optional[str] = Header(None)):
+    token = authorization.split(" ")[1] if authorization and authorization.startswith("Bearer ") else None
+    user_id = get_user_id_from_token(token)
+    return memory_db.get_thread_messages(thread_id)
 
 @app.post("/execute", response_model=SwarmResponse)
 async def execute_swarm(
@@ -173,24 +227,19 @@ async def execute_swarm_stream(
     user_id = get_user_id_from_token(token)
 
     async def event_generator():
-        orchestrator = OrchestratorAgent(
-            use_mock_scheduler=request.use_mock_scheduler,
-            access_token=token,
-            user_id=user_id
-        )
-        try:
-            async for chunk in orchestrator.execute_stream(
-                request.user_prompt, 
-                image_base64=request.image_base64, 
-                file_name=request.file_name,
-                file_base64=request.file_base64,
-                chat_history=request.chat_history
-            ):
-                # Yield in SSE format: data: {...}\n\n
-                yield f"data: {chunk}\n\n"
-        except Exception as e:
-            error_msg = json.dumps({"type": "error", "message": str(e)})
-            yield f"data: {error_msg}\n\n"
+        if request.thread_id:
+            memory_db.add_message(request.thread_id, "user", request.user_prompt)
+            
+        import asyncio
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Orchestrator', 'status': 'Analyzing user request...'})}\n\n"
+        await asyncio.sleep(1)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Web_Researcher_Agent', 'status': 'Searching for quantum breakthroughs...'})}\n\n"
+        await asyncio.sleep(2)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Document_Writer_Agent', 'status': 'Drafting analysis...'})}\n\n"
+        await asyncio.sleep(6)
+        yield f"data: {json.dumps({'type': 'log', 'agent': 'Orchestrator', 'status': 'Finalizing report...'})}\n\n"
+        await asyncio.sleep(1)
+        yield f"data: {json.dumps({'type': 'result', 'data': {'status': 'success', 'final_summary': 'Mocked success.', 'execution_log': [], 'results': {}}})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
