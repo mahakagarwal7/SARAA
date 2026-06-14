@@ -51,8 +51,18 @@ export const loginUser = async (username: string, password: string): Promise<Aut
   return response.data;
 };
 
-export const registerUser = async (username: string, password: string): Promise<AuthResponse> => {
-  const response = await api.post('/auth/register', { username, password });
+export const registerUser = async (username: string, password: string, email: string): Promise<AuthResponse> => {
+  const response = await api.post('/auth/register', { username, password, email });
+  return response.data;
+};
+
+export const forgotPassword = async (username: string, email: string): Promise<{ message: string }> => {
+  const response = await api.post('/auth/forgot-password', { username, email });
+  return response.data;
+};
+
+export const resetPassword = async (username: string, code: string, newPassword: string): Promise<{ message: string }> => {
+  const response = await api.post('/auth/reset-password', { username, code, new_password: newPassword });
   return response.data;
 };
 
