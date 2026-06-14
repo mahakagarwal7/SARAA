@@ -47,7 +47,9 @@ import {
   registerUser,
   getThreads,
   getThreadMessages,
-  createThread
+  createThread,
+  forgotPassword,
+  resetPassword
 } from './services/api';
 import type { User, Thread } from './services/api';
 import ReactMarkdown from 'react-markdown';
@@ -77,9 +79,10 @@ function getAgentIcon(agentName: string) {
 
 function AppContent() {
   const [prompt, setPrompt] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<{role: string, content: string, results?: any}[]>([]);
-  const [liveLogs, setLiveLogs] = useState<{agent: string, status: string}[]>([]);
+  const [liveLogsByThread, setLiveLogsByThread] = useState<Record<string, {agent: string, status: string}[]>>({});
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [isInputEmptyError, setIsInputEmptyError] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
@@ -96,12 +99,49 @@ function AppContent() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const isLoading = loadingThreadId !== null && (loadingThreadId === activeThreadId || (activeThreadId === null && loadingThreadId === 'new'));
+  const liveLogs = (activeThreadId ? liveLogsByThread[activeThreadId] : liveLogsByThread['new']) || [];
+
+  const activeThreadIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId;
+  }, [activeThreadId]);
+
+  const threadsRef = useRef<Thread[]>([]);
+  useEffect(() => {
+    threadsRef.current = threads;
+  }, [threads]);
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
   
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authCode, setAuthCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
+
+  // Clear auth state on close
+  useEffect(() => {
+    if (!isAuthOpen) {
+      setAuthUsername('');
+      setAuthPassword('');
+      setAuthEmail('');
+      setAuthCode('');
+      setNewPassword('');
+      setAuthError(null);
+      setAuthSuccessMessage(null);
+      setAuthMode('login');
+    }
+  }, [isAuthOpen]);
 
   const vantaRef = useRef<HTMLDivElement>(null);
   const searchBarRef = useRef<HTMLDivElement>(null);
@@ -127,7 +167,7 @@ function AppContent() {
   const handleThreadSelect = async (threadId: string) => {
     setActiveThreadId(threadId);
     setMessages([]);
-    setLiveLogs([]);
+    setUnreadCounts(prev => ({ ...prev, [threadId]: 0 }));
     if (!token) return;
     try {
       const msgs = await getThreadMessages(threadId, token);
@@ -145,7 +185,6 @@ function AppContent() {
   const handleNewChat = () => {
     setActiveThreadId(null);
     setMessages([]);
-    setLiveLogs([]);
     setPrompt('');
     removeFile();
   };
@@ -166,8 +205,12 @@ function AppContent() {
 
   const handleRegister = async () => {
     setAuthError(null);
+    if (!authUsername || !authPassword || !authEmail) {
+      setAuthError("All fields are required (Username, Email, and Password)");
+      return;
+    }
     try {
-      const res = await registerUser(authUsername, authPassword);
+      const res = await registerUser(authUsername, authPassword, authEmail);
       setToken(res.access_token);
       setUser(res.user);
       localStorage.setItem('token', res.access_token);
@@ -175,6 +218,44 @@ function AppContent() {
       setIsAuthOpen(false);
     } catch (e: any) {
       setAuthError(e.response?.data?.detail || "Registration failed");
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setAuthError(null);
+    setAuthSuccessMessage(null);
+    if (!authUsername || !authEmail) {
+      setAuthError("Please provide both Username and Email");
+      return;
+    }
+    try {
+      const res = await forgotPassword(authUsername, authEmail);
+      setAuthSuccessMessage(res.message);
+      setAuthMode('reset');
+    } catch (e: any) {
+      setAuthError(e.response?.data?.detail || "Failed to initiate password reset");
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setAuthError(null);
+    setAuthSuccessMessage(null);
+    if (!authUsername || !authCode || !newPassword) {
+      setAuthError("Please provide Username, Code, and New Password");
+      return;
+    }
+    try {
+      const res = await resetPassword(authUsername, authCode, newPassword);
+      dispatchToast(
+        <Toast><ToastTitle>Success</ToastTitle><ToastBody>{res.message}</ToastBody></Toast>,
+        { intent: "success" }
+      );
+      setAuthSuccessMessage(res.message);
+      setAuthMode('login');
+      setAuthCode('');
+      setNewPassword('');
+    } catch (e: any) {
+      setAuthError(e.response?.data?.detail || "Failed to reset password");
     }
   };
 
@@ -368,38 +449,104 @@ function AppContent() {
     setMessages([...currentHistory, userMessage]);
     setPrompt('');
     removeFile(); // Clear preview after sending
-    setIsLoading(true);
-    setLiveLogs([]);
+    
+    let currentThreadId = activeThreadId;
+    const tempKey = currentThreadId || 'new';
+    
+    setLoadingThreadId(tempKey);
+    setLiveLogsByThread(prev => ({ ...prev, [tempKey]: [] }));
 
     abortControllerRef.current = new AbortController();
 
     try {
-      let currentThreadId = activeThreadId;
       if (!currentThreadId && token) {
         // Create new thread
         const newThreadTitle = userMessage.content.slice(0, 30) + "...";
         const newThread = await createThread(newThreadTitle, token);
         currentThreadId = newThread.id;
+        
+        // Move logs from 'new' to newThread.id, update loadingThreadId
+        setLiveLogsByThread(prev => {
+          const next = { ...prev };
+          if (next['new']) {
+            next[currentThreadId!] = next['new'];
+            delete next['new'];
+          }
+          return next;
+        });
+        
+        setLoadingThreadId(currentThreadId);
         setActiveThreadId(currentThreadId);
         loadThreads(); // Refresh thread list
       }
 
-      await executeSwarmStream(userMessage.content, token || undefined, currentThreadId || undefined, currentHistory, (event) => {
+      const targetThreadId = currentThreadId;
+
+      await executeSwarmStream(userMessage.content, token || undefined, targetThreadId || undefined, currentHistory, (event) => {
+        const isCurrentActive = activeThreadIdRef.current === targetThreadId;
+
         if (event.type === 'log') {
-          setLiveLogs((prev: any[]) => [...prev, { agent: event.agent, status: event.status || event.message }]);
+          const logKey = targetThreadId || 'new';
+          setLiveLogsByThread(prev => ({
+            ...prev,
+            [logKey]: [...(prev[logKey] || []), { agent: event.agent, status: event.status || event.message }]
+          }));
         } else if (event.type === 'result') {
-          setMessages(prev => [...prev, { 
-            role: 'assistant', 
-            content: event.data.final_summary, 
-            results: event.data 
-          }]);
-          setIsLoading(false);
-        } else if (event.type === 'error') {
+          if (isCurrentActive) {
+            setMessages(prev => [...prev, { 
+              role: 'assistant', 
+              content: event.data.final_summary, 
+              results: event.data 
+            }]);
+          } else {
+            if (targetThreadId) {
+              setUnreadCounts(prev => ({
+                ...prev,
+                [targetThreadId]: (prev[targetThreadId] || 0) + 1
+              }));
+            }
+            loadThreads();
+          }
+          setLoadingThreadId(null);
+
+          // Notifications
+          const threadTitle = threadsRef.current.find(t => t.id === targetThreadId)?.title || "Swarm Chat";
+          
+          if (!document.hasFocus() && 'Notification' in window && Notification.permission === 'granted') {
+            new Notification("Search Complete", {
+              body: isCurrentActive 
+                ? "The swarm has finished compiling your report."
+                : `The swarm finished research in "${threadTitle}"`,
+              icon: "/favicon.svg"
+            });
+          }
+          
           dispatchToast(
-            <Toast><ToastTitle>Execution Failed</ToastTitle><ToastBody>{event.message}</ToastBody></Toast>,
-            { intent: "error" }
+            <Toast>
+              <ToastTitle>Search Complete</ToastTitle>
+              <ToastBody>
+                {isCurrentActive 
+                  ? "The swarm has finished compiling your report." 
+                  : `The swarm finished research in "${threadTitle}"`}
+              </ToastBody>
+            </Toast>,
+            { intent: "success" }
           );
-          setIsLoading(false);
+
+        } else if (event.type === 'error') {
+          if (isCurrentActive) {
+            dispatchToast(
+              <Toast><ToastTitle>Execution Failed</ToastTitle><ToastBody>{event.message}</ToastBody></Toast>,
+              { intent: "error" }
+            );
+          } else {
+            const threadTitle = threadsRef.current.find(t => t.id === targetThreadId)?.title || "Swarm Chat";
+            dispatchToast(
+              <Toast><ToastTitle>Swarm Error</ToastTitle><ToastBody>Failed in "${threadTitle}": {event.message}</ToastBody></Toast>,
+              { intent: "error" }
+            );
+          }
+          setLoadingThreadId(null);
         }
       }, abortControllerRef.current.signal, base64Image, fileName, base64File);
     } catch (err: any) {
@@ -414,7 +561,7 @@ function AppContent() {
           { intent: "error" }
         );
       }
-      setIsLoading(false);
+      setLoadingThreadId(null);
     } finally {
       abortControllerRef.current = null;
     }
@@ -466,9 +613,23 @@ function AppContent() {
               appearance={activeThreadId === t.id ? undefined : "subtle"} 
               className={activeThreadId === t.id ? "sidebar-btn-active" : undefined}
               onClick={() => handleThreadSelect(t.id)}
-              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 4, paddingLeft: 12, borderRadius: 8, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              style={{ width: '100%', justifyContent: 'flex-start', marginBottom: 4, paddingLeft: 12, borderRadius: 8, textAlign: 'left', display: 'flex', alignItems: 'center' }}
             >
-              {t.title}
+              <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</span>
+              {unreadCounts[t.id] > 0 && (
+                <span className="unread-badge" style={{
+                  backgroundColor: '#facc15',
+                  color: '#050505',
+                  borderRadius: '10px',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  marginLeft: 8,
+                  flexShrink: 0
+                }}>
+                  {unreadCounts[t.id]}
+                </span>
+              )}
             </Button>
           ))}
         </div>
@@ -497,36 +658,117 @@ function AppContent() {
             </DialogTrigger>
             <DialogSurface className="glass-dialog">
               <DialogBody>
-                <DialogTitle>{authMode === 'login' ? 'Sign In' : 'Sign Up'}</DialogTitle>
+                <DialogTitle>
+                  {authMode === 'login' ? 'Sign In' : 
+                   authMode === 'register' ? 'Sign Up' : 
+                   authMode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
+                </DialogTitle>
                 <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
                   {authError && <Text style={{ color: '#ef4444' }}>{authError}</Text>}
+                  {authSuccessMessage && <Text style={{ color: '#10b981' }}>{authSuccessMessage}</Text>}
+                  
                   <Input 
                     placeholder="Username" 
                     value={authUsername} 
                     onChange={e => setAuthUsername(e.target.value)} 
+                    disabled={authMode === 'reset'}
                   />
-                  <Input 
-                    type="password" 
-                    placeholder="Password" 
-                    value={authPassword} 
-                    onChange={e => setAuthPassword(e.target.value)} 
-                    onKeyDown={e => e.key === 'Enter' && (authMode === 'login' ? handleLogin() : handleRegister())}
-                  />
-                  <Button 
-                    appearance="transparent" 
-                    style={{ alignSelf: 'flex-start', padding: 0 }}
-                    onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-                  >
-                    {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
-                  </Button>
+                  
+                  {(authMode === 'register' || authMode === 'forgot') && (
+                    <Input 
+                      type="email"
+                      placeholder="Email" 
+                      value={authEmail} 
+                      onChange={e => setAuthEmail(e.target.value)} 
+                    />
+                  )}
+                  
+                  {(authMode === 'login' || authMode === 'register') && (
+                    <Input 
+                      type="password" 
+                      placeholder="Password" 
+                      value={authPassword} 
+                      onChange={e => setAuthPassword(e.target.value)} 
+                      onKeyDown={e => e.key === 'Enter' && (authMode === 'login' ? handleLogin() : handleRegister())}
+                    />
+                  )}
+                  
+                  {authMode === 'reset' && (
+                    <Input 
+                      placeholder="Verification Code" 
+                      value={authCode} 
+                      onChange={e => setAuthCode(e.target.value)} 
+                    />
+                  )}
+                  
+                  {authMode === 'reset' && (
+                    <Input 
+                      type="password" 
+                      placeholder="New Password" 
+                      value={newPassword} 
+                      onChange={e => setNewPassword(e.target.value)} 
+                      onKeyDown={e => e.key === 'Enter' && handleResetPassword()}
+                    />
+                  )}
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                    {authMode === 'login' && (
+                      <>
+                        <Button 
+                          appearance="transparent" 
+                          style={{ padding: 0, height: 'auto', minWidth: 'auto' }}
+                          onClick={() => { setAuthMode('register'); setAuthError(null); setAuthSuccessMessage(null); }}
+                        >
+                          Don't have an account? Sign Up
+                        </Button>
+                        <Button 
+                          appearance="transparent" 
+                          style={{ padding: 0, height: 'auto', minWidth: 'auto', color: '#facc15' }}
+                          onClick={() => { setAuthMode('forgot'); setAuthError(null); setAuthSuccessMessage(null); }}
+                        >
+                          Forgot Password?
+                        </Button>
+                      </>
+                    )}
+                    
+                    {authMode === 'register' && (
+                      <Button 
+                        appearance="transparent" 
+                        style={{ padding: 0, height: 'auto', minWidth: 'auto' }}
+                        onClick={() => { setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); }}
+                      >
+                        Already have an account? Sign In
+                      </Button>
+                    )}
+                    
+                    {(authMode === 'forgot' || authMode === 'reset') && (
+                      <Button 
+                        appearance="transparent" 
+                        style={{ padding: 0, height: 'auto', minWidth: 'auto' }}
+                        onClick={() => { setAuthMode('login'); setAuthError(null); setAuthSuccessMessage(null); }}
+                      >
+                        Back to Sign In
+                      </Button>
+                    )}
+                  </div>
                 </DialogContent>
                 <DialogActions style={{ marginTop: 24 }}>
                   <DialogTrigger disableButtonEnhancement>
                     <Button appearance="secondary">Cancel</Button>
                   </DialogTrigger>
-                  <Button appearance="primary" onClick={authMode === 'login' ? handleLogin : handleRegister}>
-                    {authMode === 'login' ? 'Sign In' : 'Sign Up'}
-                  </Button>
+                  
+                  {authMode === 'login' && (
+                    <Button appearance="primary" onClick={handleLogin}>Sign In</Button>
+                  )}
+                  {authMode === 'register' && (
+                    <Button appearance="primary" onClick={handleRegister}>Sign Up</Button>
+                  )}
+                  {authMode === 'forgot' && (
+                    <Button appearance="primary" onClick={handleForgotPassword}>Send Code</Button>
+                  )}
+                  {authMode === 'reset' && (
+                    <Button appearance="primary" onClick={handleResetPassword}>Reset Password</Button>
+                  )}
                 </DialogActions>
               </DialogBody>
             </DialogSurface>

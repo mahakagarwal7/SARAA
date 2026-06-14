@@ -85,6 +85,16 @@ class SwarmRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str
     password: str
+    email: str
+
+class ForgotPasswordRequest(BaseModel):
+    username: str
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    username: str
+    code: str
+    new_password: str
 
 class LoginRequest(BaseModel):
     username: str
@@ -129,10 +139,10 @@ async def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail="Username already registered")
     user_id = str(uuid.uuid4())
     password_hash = bcrypt.hashpw(req.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    memory_db.create_user(user_id, req.username, password_hash)
+    memory_db.create_user(user_id, req.username, password_hash, req.email)
     
     token = jwt.encode({"sub": user_id, "username": req.username}, SECRET_KEY, algorithm=ALGORITHM)
-    return {"access_token": token, "token_type": "bearer", "user": {"id": user_id, "username": req.username}}
+    return {"access_token": token, "token_type": "bearer", "user": {"id": user_id, "username": req.username, "email": req.email}}
 
 @app.post("/auth/login")
 async def login(req: LoginRequest):
@@ -142,6 +152,120 @@ async def login(req: LoginRequest):
     
     token = jwt.encode({"sub": user["id"], "username": user["username"]}, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer", "user": {"id": user["id"], "username": user["username"]}}
+
+@app.post("/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest):
+    user = memory_db.get_user_by_username(req.username)
+    if not user or user.get("email") != req.email:
+        raise HTTPException(status_code=404, detail="Username or email incorrect")
+    
+    # Generate random 6-digit code
+    import random
+    code = f"{random.randint(100000, 999999)}"
+    
+    memory_db.save_password_reset(req.username, req.email, code)
+    
+    # Check for SMTP Configuration
+    smtp_host = settings.SMTP_HOST
+    smtp_port = settings.SMTP_PORT
+    smtp_username = settings.SMTP_USERNAME
+    smtp_password = settings.SMTP_PASSWORD
+    
+    email_sent_via_smtp = False
+    smtp_error = None
+    
+    if smtp_host and smtp_port and smtp_username and smtp_password:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = smtp_username
+            msg['To'] = req.email
+            msg['Subject'] = "SARAA Account Password Reset Code"
+            
+            body = (
+                f"Hello {req.username},\n\n"
+                f"You requested a password reset code for your SARAA account.\n\n"
+                f"Your 6-digit verification code is: {code}\n\n"
+                f"This code will expire in 15 minutes.\n\n"
+                f"If you did not make this request, please ignore this email."
+            )
+            msg.attach(MIMEText(body, 'plain'))
+            
+            port = int(smtp_port)
+            if port == 465:
+                server = smtplib.SMTP_SSL(smtp_host, port, timeout=10)
+            else:
+                server = smtplib.SMTP(smtp_host, port, timeout=10)
+                server.starttls()
+                
+            server.login(smtp_username, smtp_password)
+            server.sendmail(smtp_username, req.email, msg.as_string())
+            server.quit()
+            email_sent_via_smtp = True
+            print(f"SMTP: Verification code email successfully sent to {req.email}")
+        except Exception as e:
+            smtp_error = str(e)
+            print(f"SMTP Error: Failed to send email via SMTP: {e}")
+            
+    # Always log the email to a local file for fallback / development purposes
+    from datetime import datetime
+    os.makedirs(os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs"), exist_ok=True)
+    log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "outputs", "sent_emails.log")
+    
+    email_content = f"To: {req.email}\nSubject: Password Reset Code\n\nYour password reset code is: {code}\n"
+    if not email_sent_via_smtp and smtp_error:
+        email_content += f"(SMTP error: {smtp_error})\n"
+        
+    with open(log_path, "a") as f:
+        f.write(f"[{datetime.now()}] {email_content}\n" + "="*40 + "\n")
+        
+    print(f"\n--- [EMAIL LOGGED] ---\n{email_content}--------------------\n")
+    
+    if email_sent_via_smtp:
+        return {"message": "Verification code sent to your email inbox."}
+    else:
+        msg_detail = "Verification code generated. (Check console or sent_emails.log)"
+        if smtp_error:
+            msg_detail += f" SMTP Error: {smtp_error}"
+        return {"message": msg_detail}
+
+@app.post("/auth/reset-password")
+async def reset_password(req: ResetPasswordRequest):
+    reset_info = memory_db.get_password_reset(req.username)
+    if not reset_info or reset_info["code"] != req.code:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+        
+    # Check if code is expired (e.g., older than 15 minutes)
+    from datetime import datetime
+    try:
+        created_at_val = reset_info["created_at"]
+        if isinstance(created_at_val, str):
+            for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    created_at = datetime.strptime(created_at_val, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                created_at = datetime.fromisoformat(created_at_val)
+        else:
+            created_at = created_at_val
+    except Exception:
+        created_at = datetime.now()
+        
+    if (datetime.now() - created_at).total_seconds() > 900:  # 15 minutes
+        memory_db.delete_password_reset(req.username)
+        raise HTTPException(status_code=400, detail="Verification code has expired")
+        
+    # Update password
+    password_hash = bcrypt.hashpw(req.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    memory_db.update_user_password(req.username, password_hash)
+    memory_db.delete_password_reset(req.username)
+    
+    return {"message": "Password reset successfully"}
 
 @app.get("/threads")
 async def get_threads(authorization: Optional[str] = Header(None)):

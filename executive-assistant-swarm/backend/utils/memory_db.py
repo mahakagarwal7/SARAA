@@ -25,7 +25,23 @@ class MemoryDB:
                     CREATE TABLE IF NOT EXISTS users (
                         id TEXT PRIMARY KEY,
                         username TEXT UNIQUE,
-                        password_hash TEXT
+                        password_hash TEXT,
+                        email TEXT
+                    )
+                ''')
+                # Proactively ensure the email column exists
+                cursor.execute("PRAGMA table_info(users)")
+                columns = [info[1] for info in cursor.fetchall()]
+                if "email" not in columns:
+                    cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+
+                # Table for Password Resets
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS password_resets (
+                        username TEXT PRIMARY KEY,
+                        email TEXT,
+                        code TEXT,
+                        created_at TIMESTAMP
                     )
                 ''')
                 # Table for Threads
@@ -107,23 +123,53 @@ class MemoryDB:
             return [{"subject": row[0], "created_at": row[1]} for row in cursor.fetchall()]
 
     # --- Users ---
-    def create_user(self, user_id: str, username: str, password_hash: str):
+    def create_user(self, user_id: str, username: str, password_hash: str, email: str = None):
         with closing(self._get_connection()) as conn:
             with conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO users (id, username, password_hash)
-                    VALUES (?, ?, ?)
-                ''', (user_id, username, password_hash))
+                    INSERT INTO users (id, username, password_hash, email)
+                    VALUES (?, ?, ?, ?)
+                ''', (user_id, username, password_hash, email))
 
     def get_user_by_username(self, username: str):
         with closing(self._get_connection()) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, username, password_hash FROM users WHERE username = ?', (username,))
+            cursor.execute('SELECT id, username, password_hash, email FROM users WHERE username = ?', (username,))
             row = cursor.fetchone()
             if row:
-                return {"id": row[0], "username": row[1], "password_hash": row[2]}
+                return {"id": row[0], "username": row[1], "password_hash": row[2], "email": row[3] if len(row) > 3 else None}
             return None
+
+    def update_user_password(self, username: str, new_password_hash: str):
+        with closing(self._get_connection()) as conn:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute('UPDATE users SET password_hash = ? WHERE username = ?', (new_password_hash, username))
+
+    def save_password_reset(self, username: str, email: str, code: str):
+        with closing(self._get_connection()) as conn:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO password_resets (username, email, code, created_at)
+                    VALUES (?, ?, ?, ?)
+                ''', (username, email, code, datetime.now()))
+
+    def get_password_reset(self, username: str):
+        with closing(self._get_connection()) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT email, code, created_at FROM password_resets WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            if row:
+                return {"email": row[0], "code": row[1], "created_at": row[2]}
+            return None
+
+    def delete_password_reset(self, username: str):
+        with closing(self._get_connection()) as conn:
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM password_resets WHERE username = ?', (username,))
 
     # --- Threads ---
     def create_thread(self, thread_id: str, user_id: str, title: str):
